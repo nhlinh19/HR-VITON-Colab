@@ -42,8 +42,8 @@ def get_opt():
     parser.add_argument('--cuda',default=True, help='cuda or cpu')
 
     parser.add_argument("--dataroot", default="./data/")
-    parser.add_argument("--datamode", default="test")
-    parser.add_argument("--data_list", default="test_pairs.txt")
+    parser.add_argument("--datamode", default="train")
+    parser.add_argument("--data_list", default="train_pairs.txt")
     parser.add_argument("--fine_width", type=int, default=768)
     parser.add_argument("--fine_height", type=int, default=1024)
     parser.add_argument("--radius", type=int, default=20)
@@ -236,6 +236,16 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                 warped_grid = grid + flow_norm
                 warped_cloth_paired = F.grid_sample(c_paired, warped_grid, padding_mode='border').detach()
                 warped_clothmask = F.grid_sample(cm, warped_grid, padding_mode='border')
+
+
+                # flow = F.interpolate(flow_list[-1].permute(0, 3, 1, 2), scale_factor=2, mode=upsample).permute(0, 2, 3, 1)
+                # flow_norm = torch.cat([flow[:, :, :, 0:1] / ((iW/2 - 1.0) / 2.0), flow[:, :, :, 1:2] / ((iH/2 - 1.0) / 2.0)], 3)
+                # warped_input1 = F.grid_sample(input1, flow_norm + grid, padding_mode='border')
+                
+                # x = self.out_layer(torch.cat([x, input2, warped_input1], 1))
+
+                # warped_c = warped_input1[:, :-1, :, :]
+                # warped_cm = warped_input1[:, -1:, :, :]
 
                 # make generator input parse map
                 fake_parse_gauss = gauss(F.interpolate(fake_segmap, size=(iH, iW), mode='bilinear'))
@@ -636,7 +646,7 @@ def main():
         input2_nc = opt.semantic_nc + 3  # parse_agnostic + densepose
         tocg = ConditionGenerator(opt, input1_nc=input1_nc, input2_nc=input2_nc, output_nc=13, ngf=96, norm_layer=nn.BatchNorm2d)
         # Load Checkpoint
-        load_checkpoint(tocg, opt.tocg_checkpoint)
+        load_checkpoint(tocg, opt.tocg_checkpoint, opt)
 
     # Generator model
     generator = SPADEGenerator(opt, 3+3+3)
@@ -652,8 +662,8 @@ def main():
 
     # Load Checkpoint
     if not opt.gen_checkpoint == '' and os.path.exists(opt.gen_checkpoint):
-        load_checkpoint(generator, opt.gen_checkpoint)
-        load_checkpoint(discriminator, opt.dis_checkpoint)
+        load_checkpoint(generator, opt.gen_checkpoint, opt)
+        load_checkpoint(discriminator, opt.dis_checkpoint, opt)
 
     # Train
     train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generator, discriminator, model)

@@ -49,6 +49,8 @@ def Evaluation(opt, pred_list, gt_list):
     with torch.no_grad():
         print("Calculate SSIM, MSE, LPIPS...")
         for i, img_pred in enumerate(pred_list):
+            if ('.png' not in img_pred):
+                continue
             img = img_pred.split('_')[0] + '_00.jpg'
             # Calculate SSIM
             gt_img = Image.open(os.path.join(opt.ground_truth_dir, img))

@@ -52,8 +52,8 @@ def get_opt():
     parser.add_argument('--fp16', action='store_true', help='use amp')
 
     parser.add_argument("--dataroot", default="./data/")
-    parser.add_argument("--datamode", default="test")
-    parser.add_argument("--data_list", default="test_pairs.txt")
+    parser.add_argument("--datamode", default="train")
+    parser.add_argument("--data_list", default="train_pairs.txt")
     parser.add_argument("--fine_width", type=int, default=192)
     parser.add_argument("--fine_height", type=int, default=256)
 
@@ -158,7 +158,7 @@ def train(opt, train_loader, test_loader, val_loader, board, tocg, D):
         flow_list, fake_segmap, warped_cloth_paired, warped_clothmask_paired = tocg(opt, input1, input2)
         
         # warped cloth mask one hot 
-        
+        # Condition generator
         warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
         # fake segmap cloth channel * warped clothmask
         if opt.clothmask_composition != 'no_composition':
