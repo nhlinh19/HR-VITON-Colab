@@ -34,16 +34,16 @@ def get_opt():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--name', type=str, required=True)
-    parser.add_argument('--gpu_ids', type=str, default='0')
+    parser.add_argument('--gpu_ids', default="0")
     parser.add_argument('-j', '--workers', type=int, default=4)
-    parser.add_argument('-b', '--batch_size', type=int, default=8)
+    parser.add_argument('-b', '--batch_size', type=int, default=1)
     parser.add_argument('--fp16', action='store_true', help='use amp')
     # Cuda availability
     parser.add_argument('--cuda',default=True, help='cuda or cpu')
 
     parser.add_argument("--dataroot", default="./data/")
-    parser.add_argument("--datamode", default="train")
-    parser.add_argument("--data_list", default="train_pairs.txt")
+    parser.add_argument("--datamode", default="test")
+    parser.add_argument("--data_list", default="test_pairs.txt")
     parser.add_argument("--fine_width", type=int, default=768)
     parser.add_argument("--fine_height", type=int, default=1024)
     parser.add_argument("--radius", type=int, default=20)
@@ -52,7 +52,7 @@ def get_opt():
     parser.add_argument('--tensorboard_dir', type=str, default='tensorboard', help='save tensorboard infos')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')
     parser.add_argument('--tocg_checkpoint', type=str, default='./model/mtviton.pth', help='condition generator checkpoint')
-    parser.add_argument('--gen_checkpoint', type=str, default='./model/gen.pth', help='gen checkpoint')
+    parser.add_argument('--gen_checkpoint', type=str, default='', help='gen checkpoint')
     parser.add_argument('--dis_checkpoint', type=str, default='', help='dis checkpoint')
 
     parser.add_argument("--tensorboard_count", type=int, default=100)
@@ -127,6 +127,32 @@ def get_opt():
 
     return opt
 
+def split_body_parts(parse_GT):
+    fake_parse = parse_GT.argmax(dim=1)[:, None]
+
+    old_parse = torch.FloatTensor(fake_parse.size(0), 13, opt.fine_height, opt.fine_width).zero_().cuda()
+    old_parse.scatter_(1, fake_parse, 1.0)
+
+    labels = {
+        0:  ['background',  [0]],
+        1:  ['paste',       [2, 4, 7, 8, 9, 10, 11]],
+        2:  ['upper',       [3]],
+        3:  ['hair',        [1]],
+        4:  ['left_arm',    [5]],
+        5:  ['right_arm',   [6]],
+        6:  ['noise',       [12]]
+    }
+    parse = torch.FloatTensor(fake_parse.size(0), 7, opt.fine_height, opt.fine_width).zero_().cuda()
+    for i in range(len(labels)):
+        for label in labels[i][1]:
+            parse[:, i] += old_parse[:, label]
+            
+    parse = parse.detach()
+
+    #write your code here
+    body_parts = None # (B, 7, 4)
+
+    return body_parts
 
 def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generator, discriminator, model):
     """
@@ -135,12 +161,14 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
 
     # Model
     if not opt.GT:
+        print("--Cuda for tocg")
         tocg.cuda()
         tocg.eval()
+        print("--Eval for tocg")
     generator.train()
     discriminator.train()
     model.eval()
-
+    print("--Model")
     # criterion
     if opt.fp16:
         criterionGAN = GANLoss('hinge', tensor=torch.cuda.HalfTensor)
@@ -148,8 +176,9 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         criterionGAN = GANLoss('hinge', tensor=torch.cuda.FloatTensor)
     # criterionL1 = nn.L1Loss()
     criterionFeat = nn.L1Loss()
-    criterionVGG = VGGLoss(opt)
-
+    print("--Finish L1 loss")
+    # criterionVGG = VGGLoss(opt)
+    print("--Finish loss")
     # optimizer
     optimizer_gen = torch.optim.Adam(generator.parameters(), lr=opt.G_lr, betas=(0, 0.9))
     scheduler_gen = torch.optim.lr_scheduler.LambdaLR(optimizer_gen, lr_lambda=lambda step: 1.0 -
@@ -157,7 +186,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
     optimizer_dis = torch.optim.Adam(discriminator.parameters(), lr=opt.D_lr, betas=(0, 0.9))
     scheduler_dis = torch.optim.lr_scheduler.LambdaLR(optimizer_dis, lr_lambda=lambda step: 1.0 -
             max(0, step * 1000 + opt.load_step - opt.keep_step) / float(opt.decay_step + 1))
-
+    print("--Finish optimizer")
     if opt.fp16:
         if not opt.GT:
             from apex import amp
@@ -167,37 +196,42 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             from apex import amp
             [generator, discriminator], [optimizer_gen, optimizer_dis] = amp.initialize(
                 [generator, discriminator], [optimizer_gen, optimizer_dis], opt_level='O1', num_losses=2)
-
+    print("--check parallel")
     if len(opt.gpu_ids) > 0:
+        print("--start parallel")
         if not opt.GT:
             tocg = DataParallelWithCallback(tocg, device_ids=opt.gpu_ids)
         generator = DataParallelWithCallback(generator, device_ids=opt.gpu_ids)
         discriminator = DataParallelWithCallback(discriminator, device_ids=opt.gpu_ids)
         criterionGAN = DataParallelWithCallback(criterionGAN, device_ids=opt.gpu_ids)
         criterionFeat = DataParallelWithCallback(criterionFeat, device_ids=opt.gpu_ids)
-        criterionVGG = DataParallelWithCallback(criterionVGG, device_ids=opt.gpu_ids)
+        # criterionVGG = DataParallelWithCallback(criterionVGG, device_ids=opt.gpu_ids)
         
     upsample = torch.nn.Upsample(scale_factor=4, mode='bilinear')
     gauss = tgm.image.GaussianBlur((15, 15), (3, 3))
     gauss = gauss.cuda()
-
+    print("--Start training")
     for step in tqdm(range(opt.load_step, opt.keep_step + opt.decay_step)):
         iter_start_time = time.time()
+        print("start load data")
         inputs = train_loader.next_batch()
-
+        print("done load data")
         # input
         agnostic = inputs['agnostic'].cuda()
+        print(f"--agnostic: {agnostic.device}")
         parse_GT = inputs['parse'].cuda()
+        print(f"--parse: {agnostic.device}")
         pose = inputs['densepose'].cuda()
+        print(f"--densepose: {agnostic.device}")
         parse_cloth = inputs['parse_cloth'].cuda()
         parse_agnostic = inputs['parse_agnostic'].cuda()
         pcm = inputs['pcm'].cuda()
         cm = inputs['cloth_mask']['paired'].cuda()
         c_paired = inputs['cloth']['paired'].cuda()
-        
+        print(f"--c_paired: {c_paired.device}")
         # target
         im = inputs['image'].cuda()
-
+        print("end load data")
         with torch.no_grad():
             if not opt.GT:
                 # Warping Cloth
@@ -627,12 +661,12 @@ def main():
     test_dataset = CPDatasetTest(opt)
     test_dataset = Subset(test_dataset, np.arange(500))
     test_loader = CPDataLoader(opt, test_dataset)
-    
+    print("done_test_loader")
     # test vis loader
     opt.batch_size = opt.num_test_visualize
     test_vis_dataset = CPDatasetTest(opt)
     test_vis_loader = CPDataLoader(opt, test_vis_dataset)
-    
+    print("done_test_vis_loader")
     # visualization
     if not os.path.exists(opt.tensorboard_dir):
         os.makedirs(opt.tensorboard_dir)
@@ -646,17 +680,19 @@ def main():
         input2_nc = opt.semantic_nc + 3  # parse_agnostic + densepose
         tocg = ConditionGenerator(opt, input1_nc=input1_nc, input2_nc=input2_nc, output_nc=13, ngf=96, norm_layer=nn.BatchNorm2d)
         # Load Checkpoint
+        print("--Load tocg check point")
         load_checkpoint(tocg, opt.tocg_checkpoint, opt)
-
+    print("done_load_checkpoint")
     # Generator model
     generator = SPADEGenerator(opt, 3+3+3)
     generator.print_network()
     if len(opt.gpu_ids) > 0:
+        print("cuda is available")
         assert(torch.cuda.is_available())
         generator.cuda()
     generator.init_weights(opt.init_type, opt.init_variance)
     discriminator = create_network(MultiscaleDiscriminator, opt)
-
+    print("done_Generator model")
     # lpips
     model = models.PerceptualLoss(model='net-lin',net='alex',use_gpu=True)
 
@@ -664,7 +700,7 @@ def main():
     if not opt.gen_checkpoint == '' and os.path.exists(opt.gen_checkpoint):
         load_checkpoint(generator, opt.gen_checkpoint, opt)
         load_checkpoint(discriminator, opt.dis_checkpoint, opt)
-
+    print("done_load_checkpoint")
     # Train
     train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generator, discriminator, model)
 

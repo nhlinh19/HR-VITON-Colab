@@ -154,19 +154,37 @@ def train(opt, train_loader, test_loader, val_loader, board, tocg, D):
         input1 = torch.cat([c_paired, cm_paired], 1)
         input2 = torch.cat([parse_agnostic, densepose], 1)
 
+        print('c_paired:', c_paired.shape)
+        print('cm_paired:', cm_paired.shape)
+        print('parse_agnostic:', parse_agnostic.shape)
+        print('densepose:', densepose.shape)
+        print('openpose:', openpose.shape)
+        print('label_onehot:', label_onehot.shape)
+        print('label:', label.shape)
+        print('parse_cloth_mask:', parse_cloth_mask.shape)
+        print('im_c:', im_c.shape)
+        print('im:', im.shape)
+        print('input1:', input1.shape)
+        print('input2:', input2.shape)
+
         # forward
         flow_list, fake_segmap, warped_cloth_paired, warped_clothmask_paired = tocg(opt, input1, input2)
-        
+        print("fake_segmap shape: ", fake_segmap.shape)
+        print("warped_cloth_paired shape: ", warped_cloth_paired.shape)
+        print("warped_clothmask_paired shape: ", warped_clothmask_paired.shape)
+
         # warped cloth mask one hot 
         # Condition generator
         warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+        print("warped_cm_onehot shape: ", warped_cm_onehot.shape)
+
         # fake segmap cloth channel * warped clothmask
         if opt.clothmask_composition != 'no_composition':
             if opt.clothmask_composition == 'detach':
                 cloth_mask = torch.ones_like(fake_segmap.detach())
                 cloth_mask[:, 3:4, :, :] = warped_cm_onehot
                 fake_segmap = fake_segmap * cloth_mask
-                
+
             if opt.clothmask_composition == 'warp_grad':
                 cloth_mask = torch.ones_like(fake_segmap.detach())
                 cloth_mask[:, 3:4, :, :] = warped_clothmask_paired
@@ -174,11 +192,13 @@ def train(opt, train_loader, test_loader, val_loader, board, tocg, D):
         if opt.occlusion:
             warped_clothmask_paired = remove_overlap(F.softmax(fake_segmap, dim=1), warped_clothmask_paired)
             warped_cloth_paired = warped_cloth_paired * warped_clothmask_paired + torch.ones_like(warped_cloth_paired) * (1-warped_clothmask_paired)
-        
+
         # generated fake cloth mask & misalign mask
         fake_clothmask = (torch.argmax(fake_segmap.detach(), dim=1, keepdim=True) == 3).long()
         misalign = fake_clothmask - warped_cm_onehot
         misalign[misalign < 0.0] = 0.0
+        print("fake_clothmask shape: ", fake_clothmask.shape)
+        print("misalign shape: ", misalign.shape)
         
         # loss warping
         loss_l1_cloth = criterionL1(warped_clothmask_paired, parse_cloth_mask)

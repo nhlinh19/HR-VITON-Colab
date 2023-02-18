@@ -57,12 +57,12 @@ class CPDatasetTest(data.Dataset):
 
         agnostic = im.copy()
         agnostic_draw = ImageDraw.Draw(agnostic)
-
+        epsilon = 1e-10
         length_a = np.linalg.norm(pose_data[5] - pose_data[2])
         length_b = np.linalg.norm(pose_data[12] - pose_data[9])
         point = (pose_data[9] + pose_data[12]) / 2
-        pose_data[9] = point + (pose_data[9] - point) / length_b * length_a
-        pose_data[12] = point + (pose_data[12] - point) / length_b * length_a
+        pose_data[9] = point + (pose_data[9] - point) / (length_b + epsilon) * (length_a + epsilon)
+        pose_data[12] = point + (pose_data[12] - point) / (length_b + epsilon) * (length_a + epsilon)
 
         r = int(length_a / 16) + 1
 
@@ -112,6 +112,7 @@ class CPDatasetTest(data.Dataset):
         agnostic.paste(im, None, Image.fromarray(np.uint8(parse_lower * 255), 'L'))
         return agnostic
     def __getitem__(self, index):
+        print(index)
         im_name = self.im_names[index]
         c_name = {}
         c = {}

@@ -98,11 +98,13 @@ def Evaluation(opt, pred_list, gt_list):
         print("Calculate Inception Score...")
         for k in range(splits):
             part = preds[k * (len(gt_list) // splits): (k+1) * (len(gt_list) // splits), :]
+            print(part.shape)
             py = np.mean(part, axis=0)
+            print(py.shape)
             scores = []
             for i in range(part.shape[0]):
                 pyx = part[i, :]
-                scores.append(entropy(pyx, py))
+                scores.append(entropy(pyx + 1e-10, py + 1e-10))
             split_scores.append(np.exp(np.mean(scores)))
 
         IS_mean, IS_std = np.mean(split_scores), np.std(split_scores)
