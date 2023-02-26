@@ -112,7 +112,6 @@ class CPDatasetTest(data.Dataset):
         agnostic.paste(im, None, Image.fromarray(np.uint8(parse_lower * 255), 'L'))
         return agnostic
     def __getitem__(self, index):
-        print(index)
         im_name = self.im_names[index]
         c_name = {}
         c = {}

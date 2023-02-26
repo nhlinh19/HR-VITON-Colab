@@ -35,8 +35,8 @@ def get_opt():
 
     parser.add_argument('--name', type=str, required=True)
     parser.add_argument('--gpu_ids', default="0")
-    parser.add_argument('-j', '--workers', type=int, default=4)
-    parser.add_argument('-b', '--batch_size', type=int, default=1)
+    parser.add_argument('-j', '--workers', type=int, default=1)
+    parser.add_argument('-b', '--batch_size', type=int, default=4)
     parser.add_argument('--fp16', action='store_true', help='use amp')
     # Cuda availability
     parser.add_argument('--cuda',default=True, help='cuda or cpu')
@@ -44,8 +44,8 @@ def get_opt():
     parser.add_argument("--dataroot", default="./data/")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
-    parser.add_argument("--fine_width", type=int, default=768)
-    parser.add_argument("--fine_height", type=int, default=1024)
+    parser.add_argument("--fine_width", type=int, default=384)
+    parser.add_argument("--fine_height", type=int, default=512)
     parser.add_argument("--radius", type=int, default=20)
     parser.add_argument("--grid_size", type=int, default=5)
 
@@ -79,9 +79,9 @@ def get_opt():
     parser.add_argument('--gen_semantic_nc', type=int, default=7, help='# of input label classes without unknown class')
     parser.add_argument('--norm_G', type=str, default='spectralaliasinstance', help='instance normalization or batch normalization')
     parser.add_argument('--norm_D', type=str, default='spectralinstance', help='instance normalization or batch normalization')
-    parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
-    parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer')
-    parser.add_argument('--num_upsampling_layers', choices=['normal', 'more', 'most'], default='most',
+    parser.add_argument('--ngf', type=int, default=32, help='# of gen filters in first conv layer')
+    parser.add_argument('--ndf', type=int, default=32, help='# of discrim filters in first conv layer')
+    parser.add_argument('--num_upsampling_layers', choices=['normal', 'more', 'most'], default='more',
                     help='If \'more\', add upsampling layer between the two middle resnet blocks. '
                             'If \'most\', also add one more (upsampling + resnet) layer at the end of the generator.')
     parser.add_argument('--init_type', type=str, default='xavier', help='network initialization [normal|xavier|kaiming|orthogonal]')
@@ -177,7 +177,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
     # criterionL1 = nn.L1Loss()
     criterionFeat = nn.L1Loss()
     print("--Finish L1 loss")
-    # criterionVGG = VGGLoss(opt)
+    criterionVGG = VGGLoss(opt)
     print("--Finish loss")
     # optimizer
     optimizer_gen = torch.optim.Adam(generator.parameters(), lr=opt.G_lr, betas=(0, 0.9))
@@ -205,7 +205,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         discriminator = DataParallelWithCallback(discriminator, device_ids=opt.gpu_ids)
         criterionGAN = DataParallelWithCallback(criterionGAN, device_ids=opt.gpu_ids)
         criterionFeat = DataParallelWithCallback(criterionFeat, device_ids=opt.gpu_ids)
-        # criterionVGG = DataParallelWithCallback(criterionVGG, device_ids=opt.gpu_ids)
+        criterionVGG = DataParallelWithCallback(criterionVGG, device_ids=opt.gpu_ids)
         
     upsample = torch.nn.Upsample(scale_factor=4, mode='bilinear')
     gauss = tgm.image.GaussianBlur((15, 15), (3, 3))
@@ -218,22 +218,23 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         print("done load data")
         # input
         agnostic = inputs['agnostic'].cuda()
-        print(f"--agnostic: {agnostic.device}")
+        # print(f"--agnostic: {agnostic.device}")
         parse_GT = inputs['parse'].cuda()
-        print(f"--parse: {agnostic.device}")
+        # print(f"--parse: {agnostic.device}")
         pose = inputs['densepose'].cuda()
-        print(f"--densepose: {agnostic.device}")
+        # print(f"--densepose: {agnostic.device}")
         parse_cloth = inputs['parse_cloth'].cuda()
         parse_agnostic = inputs['parse_agnostic'].cuda()
         pcm = inputs['pcm'].cuda()
         cm = inputs['cloth_mask']['paired'].cuda()
         c_paired = inputs['cloth']['paired'].cuda()
-        print(f"--c_paired: {c_paired.device}")
+        # print(f"--c_paired: {c_paired.device}")
         # target
         im = inputs['image'].cuda()
         print("end load data")
         with torch.no_grad():
-            if not opt.GT:
+            if opt.GT:
+                print("tocg")
                 # Warping Cloth
                 # down
                 pre_clothes_mask_down = F.interpolate(cm, size=(256, 192), mode='nearest')
@@ -317,14 +318,25 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                     parse[:, i] += old_parse[:, label]
                     
             parse = parse.detach()
+            print("--Start generater")
         # --------------------------------------------------------------------------------------------------------------
         #                                              Train the generator
         # --------------------------------------------------------------------------------------------------------------
-        output_paired = generator(torch.cat((agnostic, pose, warped_cloth_paired), dim=1), parse)
-
+        print("agnostic shape: ", agnostic.shape) # [batch, 3, height, width]
+        print("pose shape: ", pose.shape) # [batch, 3, height, width]
+        print("warped_cloth_paired shape: ", warped_cloth_paired.shape) # [batch, 3, height, width]
+        input_1 = torch.cat((agnostic, pose, warped_cloth_paired), dim=1) 
+        
+        output_paired = generator(input_1, parse)
+        print("output_paired shape: ", output_paired.shape) # [batch, 3, height, width]
+        print("--Done generate")
         fake_concat = torch.cat((parse, output_paired), dim=1)
         real_concat = torch.cat((parse, im), dim=1)
         pred = discriminator(torch.cat((fake_concat, real_concat), dim=0))
+        print(f"--Predict shape: {len(pred), len(pred[0])}")
+        for i in range(len(pred)):
+            for j in range(len(pred[i])):
+                print(f"--Predict[{i}][{j}] shape: {pred[i][j].shape}")
 
         # the prediction contains the intermediate outputs of multiscale GAN,
         # so it's usually a list
@@ -388,6 +400,14 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         else:
             pred_fake = pred[:pred.size(0) // 2]
             pred_real = pred[pred.size(0) // 2:]
+        
+        for i in range(len(pred_fake)):
+            for j in range(len(pred_fake[i])):
+                print(f"--pred_fake[{i}][{j}] shape: {pred_fake[i][j].shape}")
+        
+        for i in range(len(pred_real)):
+            for j in range(len(pred_real[i])):
+                print(f"--pred_real[{i}][{j}] shape: {pred_real[i][j].shape}")
 
         D_losses = {}
         D_losses['D_Fake'] = criterionGAN(pred_fake, False, for_discriminator=True)

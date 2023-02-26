@@ -102,8 +102,10 @@ class SPADENorm(nn.Module):
         # Part 1. Generate parameter-free normalized activations.
         b, c, h, w = x.size()
         if self.param_opt.cuda :
+            # print(f"shape = {(b, w, h, 1)}")
             noise = (torch.randn(b, w, h, 1).cuda() * self.noise_scale).transpose(1, 3)
         else:
+            # print(f"shape = {(b, w, h, 1)}")
             noise = (torch.randn(b, w, h, 1)* self.noise_scale).transpose(1, 3)
 
 
@@ -165,10 +167,10 @@ class SPADEResBlock(nn.Module):
         if misalign_mask is not None:
             misalign_mask = F.interpolate(misalign_mask, size=x.size()[2:], mode='nearest')
 
-        x_s = self.shortcut(x, seg, misalign_mask)
-
         dx = self.conv_0(self.relu(self.norm_0(x, seg, misalign_mask)))
         dx = self.conv_1(self.relu(self.norm_1(dx, seg, misalign_mask)))
+
+        x_s = self.shortcut(x, seg, misalign_mask)
         output = x_s + dx
         return output
 
@@ -221,27 +223,47 @@ class SPADEGenerator(BaseNetwork):
     def forward(self, x, seg):
         samples = [F.interpolate(x, size=(self.sh * 2**i, self.sw * 2**i), mode='nearest') for i in range(8)]
         features = [self._modules['conv_{}'.format(i)](samples[i]) for i in range(8)]
+        # print(f"--x: {x.shape}, {x.dtype} | seg: {seg.shape}", {seg.dtype})
+        # print(f"--samples: {len(samples)} shape = {samples[0].shape}, {samples[0].dtype} | features: {len(features)} shape = {features[0].shape}, {features[0].dtype}")
 
         x = self.head_0(features[0], seg)
+        # print(f"checkpoint 1: {x.shape}")
         x = self.up(x)
+        # print(f"checkpoint 2: {x.shape}")
         x = self.G_middle_0(torch.cat((x, features[1]), 1), seg)
+        # print(f"checkpoint 3: {x.shape}")
         if self.num_upsampling_layers in ['more', 'most']:
             x = self.up(x)
+            # print(f"checkpoint 4: {x.shape}")
+        
         x = self.G_middle_1(torch.cat((x, features[2]), 1), seg)
+        # print(f"checkpoint 5: {x.shape}")
 
         x = self.up(x)
+        # print(f"checkpoint 6: {x.shape}")
         x = self.up_0(torch.cat((x, features[3]), 1), seg)
+        # print(f"checkpoint 7: {x.shape}")
         x = self.up(x)
+        # print(f"checkpoint 8: {x.shape}")
         x = self.up_1(torch.cat((x, features[4]), 1), seg)
+
+        # print(f"checkpoint 9: {x.shape}")
         x = self.up(x)
+        # print(f"checkpoint 10: {x.shape}")
         x = self.up_2(torch.cat((x, features[5]), 1), seg)
+        # print(f"checkpoint 11: {x.shape}")
         x = self.up(x)
+        # print(f"checkpoint 12: {x.shape}")
         x = self.up_3(torch.cat((x, features[6]), 1), seg)
+        # print(f"checkpoint 13: {x.shape}")
         if self.num_upsampling_layers == 'most':
             x = self.up(x)
+            # print(f"checkpoint 14: {x.shape}")
             x = self.up_4(torch.cat((x, features[7]), 1), seg)
+            # print(f"checkpoint 15: {x.shape}")
 
         x = self.conv_img(self.relu(x))
+        # print(f"checkpoint 16: {x.shape}")
         return self.tanh(x)
 ########################################################################
 
