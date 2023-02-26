@@ -198,38 +198,66 @@ def main():
 
     train_dataset = CPDataset(opt)
     train_loader = CPDataLoader(opt, train_dataset)
+    c=0
+    labels = [ {"width": 0, "height": 0},    {"width": 0, "height": 0},    {"width": 0, "height": 0},{"width": 0, "height": 0},{"width": 0, "height": 0},{"width": 0, "height": 0},{"width": 0, "height": 0}]
+    for inputs in train_loader.data_loader: 
+            img = inputs['image']
+            parse_GT = inputs['parse']
+            parse = generate_parse(parse_GT, opt)
+            shape = parse.shape
+            masks = parse[0, :, :, :]
+            boxes = masks_to_boxes(masks)
+            seg = parse[0, 0, :, :]
+            for i in range(boxes.shape[0]):
+                seg = add_bounding_box(boxes[i].type(torch.int64), seg, 1)
+                # print(split_body_parts(seg))
+                img[0] = add_bounding_box_img(boxes[i].type(torch.int64), img[0], 0)
+            parse[0, 0, :, :] = seg
+            # save_image(img[0] / 2 + 0.5, f'./output/test/image_new{c}.png')
+            boxes = split_body_parts(parse)
+            for i in range(len(boxes[0])):
+                print(boxes[0][i][2].item())
+                if(boxes[0][i][2].item()>labels[i]["width"]):
+                    labels[i]["width"]=boxes[0][i][2].item()
+                if(boxes[0][i][3].item()>labels[i]["height"]):
+                    labels[i]["height"]=boxes[0][i][3].item()
+            c=c+1
+    print(labels)
 
-    inputs = train_loader.next_batch()
-    img = inputs['image']
-    parse_GT = inputs['parse']
+    # inputs = train_loader.next_batch()
+    # img = inputs['image']
+    # parse_GT = inputs['parse']
 
-    parse = generate_parse(parse_GT, opt)
-    shape = parse.shape
+    # parse = generate_parse(parse_GT, opt)
+    # shape = parse.shape
+    # c=0
 
-    save_image(img[0] / 2 + 0.5, f'./output/torch/image.png')
-    save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor.png')
 
-    for channel in range(shape[1]):
-        x = parse[0, channel, :, :]
-        save_image(x, f'./output/torch/tensor{channel}.png')
+    # save_image(img[0] / 2 + 0.5, f'./output/torch/image.png')
+    # save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor.png')
+
+    # for channel in range(shape[1]):
+    #     x = parse[0, channel, :, :]
+    #     save_image(x, f'./output/torch/tensor{channel}.png')
     
-    masks = parse[0, :, :, :]
-    print(masks.shape)
-    boxes = masks_to_boxes(masks)
-    print(boxes)
+    # masks = parse[0, :, :, :]
+    # print(masks.shape)
+    # boxes = masks_to_boxes(masks)
+    # print("box")
+    # print(boxes)
 
-    seg = parse[0, 0, :, :]
-    for i in range(boxes.shape[0]):
-        seg = add_bounding_box(boxes[i].type(torch.int64), seg, 1)
-        img[0] = add_bounding_box_img(boxes[i].type(torch.int64), img[0], 0)
-    parse[0, 0, :, :] = seg
+    # seg = parse[0, 0, :, :]
+    # for i in range(boxes.shape[0]):
+    #     seg = add_bounding_box(boxes[i].type(torch.int64), seg, 1)
+    #     img[0] = add_bounding_box_img(boxes[i].type(torch.int64), img[0], 0)
+    # parse[0, 0, :, :] = seg
 
-    save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor_new.png')
-    save_image(img[0] / 2 + 0.5, f'./output/torch/image_new.png')
+    # save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor_new.png')
+    # save_image(img[0] / 2 + 0.5, f'./output/torch/image_new.png')
 
-    boxes = split_body_parts(parse)
-    print(boxes.shape)
-    print(boxes)
+    # boxes = split_body_parts(parse)
+    # print(boxes.shape)
+    # print(boxes)
 
 if __name__ == "__main__":
     main()
