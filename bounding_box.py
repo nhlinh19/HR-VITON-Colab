@@ -6,6 +6,7 @@ import torch
 from torchvision.utils import save_image
 import numpy as np
 from utils import *
+import math
 
 def get_opt():
     parser = argparse.ArgumentParser()
@@ -84,6 +85,9 @@ def get_opt():
     parser.add_argument("--clothmask_composition", type=str, choices=['no_composition', 'detach', 'warp_grad'], default='warp_grad')
     # visualize
     parser.add_argument("--num_test_visualize", type=int, default=3)
+
+    # bounding box
+    parser.add_argument("--bbox_max_size", default=[[1.0, 1.0], [1.0, 0.6979166666666666], [0.91015625, 0.9635416666666666], [0.73046875, 0.6614583333333334], [0.765625, 0.7604166666666666], [0.7734375, 0.7005208333333334], [0.0, 0.0]])
 
     opt = parser.parse_args()
 
@@ -167,12 +171,11 @@ def generate_parse(parse_GT, opt):
 
     labels = {
         0:  ['background',  [0]],
-        1:  ['paste',       [2, 4, 7, 8, 9, 10, 11]],
+        1:  ['bottom',      [4, 7, 8, 9, 10, 11]],
         2:  ['upper',       [3]],
-        3:  ['hair',        [1]],
+        3:  ['face_hair',        [1, 2]],
         4:  ['left_arm',    [5]],
         5:  ['right_arm',   [6]],
-        6:  ['noise',       [12]]
     }
     parse = torch.FloatTensor(fake_parse.size(0), 7, opt.fine_height, opt.fine_width).zero_()
     for i in range(len(labels)):
@@ -181,7 +184,7 @@ def generate_parse(parse_GT, opt):
 
     return parse
 
-def split_body_parts(parse):
+def find_bouding_box(parse):
     batch_size, num_masks, _, _ = parse.shape
     boxes = torch.FloatTensor(batch_size, num_masks, 4).zero_()
     for batch in range(batch_size):
@@ -190,12 +193,46 @@ def split_body_parts(parse):
 
     return boxes
 
+def crop_boxes(img, boxes):
+    """
+    Crop the input image based on a list of bounding boxes.
+
+    Args:
+        img (torch.Tensor): Input image tensor of shape (3, height, width).
+        boxes (list): List of bounding boxes as tuples of (top, left, height, width).
+
+    Returns:
+        list: List of cropped images corresponding to each bounding box.
+    """
+    cropped_images = []
+    for i in range(len(boxes)):
+        top, left, height, width = boxes[i].type(torch.int64)
+        if (height == 0) or (width == 0):
+            continue
+        # Make sure the box is within the image boundaries
+        top = max(0, top)
+        left = max(0, left)
+        bottom = min(img.shape[1], top + height)
+        right = min(img.shape[2], left + width)
+        # Crop the image
+        cropped_image = img[:, top:bottom, left:right]
+        cropped_images.append(cropped_image)
+        save_image(cropped_image / 2 + 0.5, f'./output/torch/cropped_image_{i}.png')
+
+    return cropped_images
+
 def main():
     print("check opt")
     opt = get_opt()
     print(opt)
     print("Start to train!")
 
+    # Cal bounding box max size
+    bbox_max_size = torch.tensor(opt.bbox_max_size) * torch.tensor([opt.fine_height, opt.fine_width])
+    bbox_max_size = torch.round(bbox_max_size).type(torch.int64)
+    print(bbox_max_size)
+
+    # Input
     train_dataset = CPDataset(opt)
     train_loader = CPDataLoader(opt, train_dataset)
     c=0
@@ -258,6 +295,45 @@ def main():
     # boxes = split_body_parts(parse)
     # print(boxes.shape)
     # print(boxes)
+
+    inputs = train_loader.next_batch()
+    img = inputs['image']
+    parse_GT = inputs['parse']
+
+    # parse = parse_GT
+    parse = generate_parse(parse_GT, opt)
+    shape = parse.shape
+
+    # Visualize image and masks
+    save_image(img[0] / 2 + 0.5, f'./output/torch/image.png')
+    save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor.png')
+
+    for channel in range(shape[1]):
+        x = parse[0, channel, :, :]
+        save_image(x, f'./output/torch/tensor{channel}.png')
+    
+    # Cut boxes
+    masks = parse[0, :, :, :]
+    print(masks.shape)
+    boxes = masks_to_boxes(masks)
+    print(boxes)
+
+    seg = parse[0, 0, :, :]
+    for i in range(boxes.shape[0]):
+        seg = add_bounding_box(boxes[i].type(torch.int64), seg, 1)
+        # img[0] = add_bounding_box_img(boxes[i].type(torch.int64), img[0], 0)
+    parse[0, 0, :, :] = seg
+
+    # Visualize bounding boxes
+    save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor_new.png')
+    # save_image(img[0] / 2 + 0.5, f'./output/torch/image_new.png')
+
+    # boxes = find_bouding_box(parse)
+    # print(boxes.shape)
+    # print(boxes)
+
+    # Visualize split boxes
+    crop_img = crop_boxes(img[0], boxes)
 
 if __name__ == "__main__":
     main()

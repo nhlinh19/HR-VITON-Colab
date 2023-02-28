@@ -22,6 +22,7 @@ from torch.utils.data import Subset
 from torchvision.transforms import transforms
 import eval_models as models
 import torchgeometry as tgm
+from bounding_box import find_bouding_box, crop_boxes
 
 def remove_overlap(seg_out, warped_cm):
     
@@ -109,6 +110,9 @@ def get_opt():
     # visualize
     parser.add_argument("--num_test_visualize", type=int, default=3)
 
+    # bounding box
+    parser.add_argument("--bbox_max_size", default=[[1.0, 1.0], [1.0, 0.6979166666666666], [0.91015625, 0.9635416666666666], [0.73046875, 0.6614583333333334], [0.765625, 0.7604166666666666], [0.7734375, 0.7005208333333334], [0.0, 0.0]])
+
     opt = parser.parse_args()
 
     # set gpu ids
@@ -127,37 +131,14 @@ def get_opt():
 
     return opt
 
-def split_body_parts(parse_GT):
-    fake_parse = parse_GT.argmax(dim=1)[:, None]
-
-    old_parse = torch.FloatTensor(fake_parse.size(0), 13, opt.fine_height, opt.fine_width).zero_().cuda()
-    old_parse.scatter_(1, fake_parse, 1.0)
-
-    labels = {
-        0:  ['background',  [0]],
-        1:  ['paste',       [2, 4, 7, 8, 9, 10, 11]],
-        2:  ['upper',       [3]],
-        3:  ['hair',        [1]],
-        4:  ['left_arm',    [5]],
-        5:  ['right_arm',   [6]],
-        6:  ['noise',       [12]]
-    }
-    parse = torch.FloatTensor(fake_parse.size(0), 7, opt.fine_height, opt.fine_width).zero_().cuda()
-    for i in range(len(labels)):
-        for label in labels[i][1]:
-            parse[:, i] += old_parse[:, label]
-            
-    parse = parse.detach()
-
-    #write your code here
-    body_parts = None # (B, 7, 4)
-
-    return body_parts
-
 def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generator, discriminator, model):
     """
         Train Generator
     """
+    # bbox_max_size
+    bbox_max_size = torch.tensor(opt.bbox_max_size) * torch.tensor([opt.fine_height, opt.fine_width])
+    bbox_max_size = torch.round(bbox_max_size).type(torch.int64)
+    print(bbox_max_size)
 
     # Model
     if not opt.GT:
@@ -303,6 +284,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             old_parse = torch.FloatTensor(fake_parse.size(0), 13, opt.fine_height, opt.fine_width).zero_().cuda()
             old_parse.scatter_(1, fake_parse, 1.0)
 
+            # Update labels 
             labels = {
                 0:  ['background',  [0]],
                 1:  ['paste',       [2, 4, 7, 8, 9, 10, 11]],
@@ -317,7 +299,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                 for label in labels[i][1]:
                     parse[:, i] += old_parse[:, label]
                     
-            parse = parse.detach()
+            parse = parse.detach() # [batch, num_labels=5, height, width])
             print("--Start generater")
         # --------------------------------------------------------------------------------------------------------------
         #                                              Train the generator
@@ -330,8 +312,8 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         output_paired = generator(input_1, parse)
         print("output_paired shape: ", output_paired.shape) # [batch, 3, height, width]
         print("--Done generate")
-        fake_concat = torch.cat((parse, output_paired), dim=1)
-        real_concat = torch.cat((parse, im), dim=1)
+        fake_concat = torch.cat((parse, output_paired), dim=1) # [batch, 3 + num_labels, height, width]
+        real_concat = torch.cat((parse, im), dim=1) # [batch, 3 + num_labels, height, width]
         pred = discriminator(torch.cat((fake_concat, real_concat), dim=0))
         print(f"--Predict shape: {len(pred), len(pred[0])}")
         for i in range(len(pred)):
