@@ -87,7 +87,7 @@ def get_opt():
     parser.add_argument("--num_test_visualize", type=int, default=3)
 
     # bounding box
-    parser.add_argument("--bbox_max_size", default=[[1.0, 1.0], [1.0, 0.6979166666666666], [0.91015625, 0.9635416666666666], [0.73046875, 0.6614583333333334], [0.765625, 0.7604166666666666], [0.7734375, 0.7005208333333334], [0.0, 0.0]])
+    parser.add_argument("--bbox_max_size", default=[[0.3520238681102362, 0.3265102116141732], [0.4945308655265748, 0.5477464730971129], [0.29374154158464566, 0.46564089156824146], [0.33411509596456695, 0.15164528994422571], [0.35114246278297245, 0.14647924868766404]])
 
     opt = parser.parse_args()
 
@@ -170,14 +170,13 @@ def generate_parse(parse_GT, opt):
     old_parse.scatter_(1, fake_parse, 1.0)
 
     labels = {
-        0:  ['background',  [0]],
-        1:  ['bottom',      [4, 7, 8, 9, 10, 11]],
-        2:  ['upper',       [3]],
-        3:  ['face_hair',        [1, 2]],
-        4:  ['left_arm',    [5]],
-        5:  ['right_arm',   [6]],
+        0:  ['face_hair',   [1, 2]],
+        1:  ['upper',       [3]],
+        2:  ['bottom',      [4, 7, 8, 9, 10, 11]],
+        3:  ['left_arm',    [5]],
+        4:  ['right_arm',   [6]],
     }
-    parse = torch.FloatTensor(fake_parse.size(0), 7, opt.fine_height, opt.fine_width).zero_()
+    parse = torch.FloatTensor(fake_parse.size(0), 5, opt.fine_height, opt.fine_width).zero_()
     for i in range(len(labels)):
         for label in labels[i][1]:
             parse[:, i] += old_parse[:, label]
@@ -193,7 +192,7 @@ def find_bouding_box(parse):
 
     return boxes
 
-def crop_boxes(img, boxes):
+def crop_boxes(img, boxes, bbox_max_size):
     """
     Crop the input image based on a list of bounding boxes.
 
@@ -218,6 +217,59 @@ def crop_boxes(img, boxes):
         cropped_image = img[:, top:bottom, left:right]
         cropped_images.append(cropped_image)
         save_image(cropped_image / 2 + 0.5, f'./output/torch/cropped_image_{i}.png')
+        print(cropped_image.shape)
+
+        # Resize image
+        H=torch.tensor(bbox_max_size[i][0], dtype=torch.int64)
+        W=torch.tensor(bbox_max_size[i][1], dtype=torch.int64)
+        resized_image = F.interpolate(cropped_image.unsqueeze(0), size=(H, W), mode='bilinear', align_corners=False)
+        resized_image = resized_image.squeeze(0)
+        cropped_images.append(resized_image)
+        save_image(resized_image / 2 + 0.5, f'./output/torch/resized_image_{i}.png')
+        print(resized_image.shape)
+    return cropped_images
+
+def crop_boxes_batch(img, body_parts_parse, bbox_max_size):
+    """
+    Crop the input image based on a list of bounding boxes.
+
+    Args:
+        img (torch.Tensor): Input image tensor of shape (batch, 3, height, width).
+        body_parts_parse (torch.Tensor): Body parts parse tensor (batch, 5, height, width)
+
+    Returns:
+        list: List of cropped images corresponding to each bounding box.
+    """
+    boxes = find_bouding_box(body_parts_parse)
+    cropped_images = []
+    for mask in range(boxes.shape[1]):
+        mask_height, mask_width = bbox_max_size[mask]
+        cropped_masks = torch.empty(0, 3, mask_height, mask_width).cuda()
+        for batch in range(img.shape[0]):
+            top, left, height, width = boxes[batch, mask].type(torch.int64)
+            if (height == 0) or (width == 0):
+                cropped_masks = torch.cat([cropped_masks, torch.zeros(1, 3, mask_height, mask_width).cuda()], dim=0)
+                continue
+
+            # Make sure the box is within the image boundaries
+            top = max(0, top)
+            left = max(0, left)
+            bottom = min(img.shape[2], top + height)
+            right = min(img.shape[3], left + width)
+
+            # Crop the image
+            cropped_mask = img[batch, :, top:bottom, left:right]
+            # save_image(cropped_mask / 2 + 0.5, f'./output/torch/cropped_image_{mask}.png')
+
+            # Resize image
+            H = torch.tensor(mask_height, dtype=torch.int64)
+            W = torch.tensor(mask_width, dtype=torch.int64)
+            resized_mask = F.interpolate(cropped_mask.unsqueeze(0), size=(H, W), mode='bilinear', align_corners=False).cuda()
+            
+            cropped_masks = torch.cat([cropped_masks, resized_mask], dim=0)
+            # save_image(resized_mask / 2 + 0.5, f'./output/torch/resized_image_{mask}.png')
+        
+        cropped_images.append(cropped_masks)
 
     return cropped_images
 
@@ -235,66 +287,6 @@ def main():
     # Input
     train_dataset = CPDataset(opt)
     train_loader = CPDataLoader(opt, train_dataset)
-    c=0
-    labels = [ {"width": 0, "height": 0},    {"width": 0, "height": 0},    {"width": 0, "height": 0},{"width": 0, "height": 0},{"width": 0, "height": 0},{"width": 0, "height": 0},{"width": 0, "height": 0}]
-    for inputs in train_loader.data_loader: 
-            img = inputs['image']
-            parse_GT = inputs['parse']
-            parse = generate_parse(parse_GT, opt)
-            shape = parse.shape
-            masks = parse[0, :, :, :]
-            boxes = masks_to_boxes(masks)
-            seg = parse[0, 0, :, :]
-            for i in range(boxes.shape[0]):
-                seg = add_bounding_box(boxes[i].type(torch.int64), seg, 1)
-                # print(split_body_parts(seg))
-                img[0] = add_bounding_box_img(boxes[i].type(torch.int64), img[0], 0)
-            parse[0, 0, :, :] = seg
-            # save_image(img[0] / 2 + 0.5, f'./output/test/image_new{c}.png')
-            boxes = split_body_parts(parse)
-            for i in range(len(boxes[0])):
-                print(boxes[0][i][2].item())
-                if(boxes[0][i][2].item()>labels[i]["width"]):
-                    labels[i]["width"]=boxes[0][i][2].item()
-                if(boxes[0][i][3].item()>labels[i]["height"]):
-                    labels[i]["height"]=boxes[0][i][3].item()
-            c=c+1
-    print(labels)
-
-    # inputs = train_loader.next_batch()
-    # img = inputs['image']
-    # parse_GT = inputs['parse']
-
-    # parse = generate_parse(parse_GT, opt)
-    # shape = parse.shape
-    # c=0
-
-
-    # save_image(img[0] / 2 + 0.5, f'./output/torch/image.png')
-    # save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor.png')
-
-    # for channel in range(shape[1]):
-    #     x = parse[0, channel, :, :]
-    #     save_image(x, f'./output/torch/tensor{channel}.png')
-    
-    # masks = parse[0, :, :, :]
-    # print(masks.shape)
-    # boxes = masks_to_boxes(masks)
-    # print("box")
-    # print(boxes)
-
-    # seg = parse[0, 0, :, :]
-    # for i in range(boxes.shape[0]):
-    #     seg = add_bounding_box(boxes[i].type(torch.int64), seg, 1)
-    #     img[0] = add_bounding_box_img(boxes[i].type(torch.int64), img[0], 0)
-    # parse[0, 0, :, :] = seg
-
-    # save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor_new.png')
-    # save_image(img[0] / 2 + 0.5, f'./output/torch/image_new.png')
-
-    # boxes = split_body_parts(parse)
-    # print(boxes.shape)
-    # print(boxes)
 
     inputs = train_loader.next_batch()
     img = inputs['image']
@@ -318,22 +310,27 @@ def main():
     boxes = masks_to_boxes(masks)
     print(boxes)
 
-    seg = parse[0, 0, :, :]
-    for i in range(boxes.shape[0]):
-        seg = add_bounding_box(boxes[i].type(torch.int64), seg, 1)
-        # img[0] = add_bounding_box_img(boxes[i].type(torch.int64), img[0], 0)
-    parse[0, 0, :, :] = seg
+    # seg = parse[0, 0, :, :]
+    # for i in range(boxes.shape[0]):
+    #     seg = add_bounding_box(boxes[i].type(torch.int64), seg, 1)
+    #     # img[0] = add_bounding_box_img(boxes[i].type(torch.int64), img[0], 0)
+    # parse[0, 0, :, :] = seg
 
-    # Visualize bounding boxes
-    save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor_new.png')
-    # save_image(img[0] / 2 + 0.5, f'./output/torch/image_new.png')
+    # # Visualize bounding boxes
+    # save_image(visualize_segmap(parse.cpu(), batch=0), f'./output/torch/tensor_new.png')
+    # # save_image(img[0] / 2 + 0.5, f'./output/torch/image_new.png')
 
     # boxes = find_bouding_box(parse)
     # print(boxes.shape)
     # print(boxes)
+    # cropped_images = crop_boxes_batch(img, parse, bbox_max_size)
+    # print(len(cropped_images))
+    # for i in range(len(cropped_images)):
+    #     print(cropped_images[i].shape)
+    #     save_image(cropped_images[i][0] / 2 + 0.5, f'./output/torch/resized_image_{i}.png')
 
     # Visualize split boxes
-    crop_img = crop_boxes(img[0], boxes)
+    crop_img = crop_boxes(img[0], boxes, bbox_max_size)
 
 if __name__ == "__main__":
     main()

@@ -148,9 +148,9 @@ class CPDataset(data.Dataset):
 
         # parse map
         labels = {
-            0:  ['background',  [0]],
+            0:  ['background',  [0, 10]],
             1:  ['hair',        [1, 2]],
-            2:  ['face',        [4, 13, 10]],
+            2:  ['face',        [4, 13]],
             3:  ['upper',       [5, 6, 7]],
             4:  ['bottom',      [9, 12]],
             5:  ['left_arm',    [14]],

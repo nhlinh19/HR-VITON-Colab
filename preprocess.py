@@ -17,21 +17,27 @@ import torch
 # t4d = torch.nn.functional.pad(t4d[:], padding, mode='constant', value=-1)
 # print(t4d)
 
-def get_background_value(image_tensor):
-    # Take the mean of each color channel
-    background_value = torch.mean(image_tensor, dim=(0,1,2))
-    
-    return background_value
+# x = [{'width': 1024.0, 'height': 768.0}, {'width': 300.79133858267716, 'height': 357.6122047244094}, {'width': 506.3996062992126, 'height': 420.6692913385827}, {'width': 360.4724409448819, 'height': 250.75984251968504}, {'width': 342.13385826771656, 'height': 116.46358267716535}, {'width': 359.5698818897638, 'height': 112.49606299212599}, {'width': 0.0, 'height': 0.0}]
+# print(len(x))
+# max_size = []
+# for label in x:
+#     max_size.append([label['width'] / 1024, label['height'] / 768])
 
-# Create a 3x4x4 image tensor with a uniform background value of 10
-image_tensor = torch.ones((3, 4, 4)) * 10
+# print(max_size)
 
-# Set some pixels to different values to simulate an image
-image_tensor[:, 1:3, 1:3] = torch.tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]], [[9, 10], [11, 12]]])
+# x = [[0.3520238681102362, 0.3265102116141732], [0.4945308655265748, 0.5477464730971129], [0.29374154158464566, 0.46564089156824146], [0.33411509596456695, 0.15164528994422571], [0.35114246278297245, 0.14647924868766404]]
 
-# Get the background value of the image
-background_value = get_background_value(image_tensor)
+concat_tensor = torch.empty(0, 3, 4)
 
-# Print the image tensor and the background value
-print("Image tensor:\n", image_tensor)
-print("Background value:\n", background_value)
+# Concatenate a tensor of size 2x3x4
+tensor1 = torch.randn(2, 3, 4)
+concat_tensor = torch.cat([concat_tensor, tensor1], dim=0)
+
+# Concatenate another tensor of size 1x3x4
+tensor2 = torch.randn(1, 3, 4)
+concat_tensor = torch.cat([concat_tensor, tensor2], dim=0)
+
+# Final concatenated tensor of size 3x3x4
+print(concat_tensor)
+print(concat_tensor.size())
+print(concat_tensor.shape)

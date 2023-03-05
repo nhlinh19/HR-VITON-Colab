@@ -208,6 +208,7 @@ def crop_boxes(img, boxes,labels):
     # size=(labels[i]["height"], labels[i]["width"])
     for i in range(len(boxes)):
         top, left, height, width = boxes[i].type(torch.int64)
+        print("--", i, top, left, height, width)
         if (height == 0) or (width == 0):
             continue
         # Make sure the box is within the image boundaries
@@ -221,10 +222,11 @@ def crop_boxes(img, boxes,labels):
         save_image(cropped_image / 2 + 0.5, f'./output/newTest/cropped_image_{i}.png')
         H=torch.tensor(labels[i]["height"], dtype=torch.int64)
         W=torch.tensor(labels[i]["width"], dtype=torch.int64)
-        print(type(H))
+        print(labels[i]["height"], labels[i]["width"])
         resized_image = F.interpolate(cropped_image.unsqueeze(0), size=(W,H), mode='bilinear', align_corners=False)
         resized_image = resized_image.squeeze(0)
         cropped_images.append(resized_image)
+        print(resized_image.shape)
         save_image(resized_image / 2 + 0.5, f'./output/test/cropped_image_{i}.png')
 
     return cropped_images

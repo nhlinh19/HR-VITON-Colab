@@ -2,3 +2,5 @@ data/
 output/
 model/
 tensorboard/
+desktop.ini
+__pycache__/

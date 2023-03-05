@@ -271,7 +271,7 @@ class SPADEGenerator(BaseNetwork):
     
 class NLayerDiscriminator(BaseNetwork):
 
-    def __init__(self, opt):
+    def __init__(self, opt, gen_semantic_nc):
         super().__init__()
         self.no_ganFeat_loss = opt.no_ganFeat_loss
         nf = opt.ndf
@@ -280,7 +280,8 @@ class NLayerDiscriminator(BaseNetwork):
         pw = int(np.ceil((kw - 1.0) / 2))
         norm_layer = get_nonspade_norm_layer(opt.norm_D)
 
-        input_nc = opt.gen_semantic_nc + 3
+        input_nc = gen_semantic_nc + 3
+        # print(input_nc)
         # input_nc = opt.gen_semantic_nc + 13
         sequence = [[nn.Conv2d(input_nc, nf, kernel_size=kw, stride=2, padding=pw),
                      nn.LeakyReLU(0.2, False)]]
@@ -312,12 +313,12 @@ class NLayerDiscriminator(BaseNetwork):
 
 class MultiscaleDiscriminator(BaseNetwork):
 
-    def __init__(self, opt):
+    def __init__(self, opt, gen_semantic_nc):
         super().__init__()
         self.no_ganFeat_loss = opt.no_ganFeat_loss
 
         for i in range(opt.num_D):
-            subnetD = NLayerDiscriminator(opt)
+            subnetD = NLayerDiscriminator(opt, gen_semantic_nc)
             self.add_module('discriminator_%d' % i, subnetD)
 
     def downsample(self, input):

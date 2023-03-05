@@ -109,8 +109,8 @@ def save_images(img_tensors, img_names, save_dir):
         im.save(os.path.join(save_dir, img_name), format='JPEG')
         
         
-def create_network(cls, opt):
-    net = cls(opt)
+def create_network(cls, opt, gen_semantic_nc):
+    net = cls(opt, gen_semantic_nc)
     net.print_network()
     if len(opt.gpu_ids) > 0:
         assert(torch.cuda.is_available())
