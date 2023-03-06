@@ -427,12 +427,12 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             output = output.detach()
             output.requires_grad_()
 
-        # fake_concat = torch.cat((parse, output), dim=1)
-        # real_concat = torch.cat((parse, im), dim=1)
-        # pred = discriminator(torch.cat((fake_concat, real_concat), dim=0))
+        fake_concat = torch.cat((parse, output), dim=1)
+        real_concat = torch.cat((parse, im), dim=1)
+        pred = discriminator(torch.cat((fake_concat, real_concat), dim=0))
 
 
-        body_parts_fake = crop_boxes_batch(output_paired, parse, bbox_max_size) # [5][batch, 3, height_body_part, width_body_part]
+        body_parts_fake = crop_boxes_batch(output, parse, bbox_max_size) # [5][batch, 3, height_body_part, width_body_part]
         body_parts_real = crop_boxes_batch(im, parse, bbox_max_size) # [5][batch, 3, height_body_part, width_body_part]
         body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [2*batch, output_channel, height_feature, width_feature]
         body_parts_pred_real = []
@@ -447,15 +447,15 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
 
         # the prediction contains the intermediate outputs of multiscale GAN,
         # so it's usually a list
-        # if type(pred) == list:
-        #     pred_fake = []
-        #     pred_real = []
-        #     for p in pred:
-        #         pred_fake.append([tensor[:tensor.size(0) // 2] for tensor in p])
-        #         pred_real.append([tensor[tensor.size(0) // 2:] for tensor in p])
-        # else:
-        #     pred_fake = pred[:pred.size(0) // 2]
-        #     pred_real = pred[pred.size(0) // 2:]
+        if type(pred) == list:
+            pred_fake = []
+            pred_real = []
+            for p in pred:
+                pred_fake.append([tensor[:tensor.size(0) // 2] for tensor in p])
+                pred_real.append([tensor[tensor.size(0) // 2:] for tensor in p])
+        else:
+            pred_fake = pred[:pred.size(0) // 2]
+            pred_real = pred[pred.size(0) // 2:]
 
         # body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
         # body_parts_pred_real = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
@@ -488,23 +488,22 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         #     for j in range(len(pred_real[i])):
         #         print(f"--pred_real[{i}][{j}] shape: {pred_real[i][j].shape}")
 
-        # D_losses = {}
-        # D_losses['D_Fake'] = criterionGAN(pred_fake, False, for_discriminator=True)
-        # D_losses['D_Real'] = criterionGAN(pred_real, True, for_discriminator=True)
+        D_losses = {}
+        D_losses['D_Fake'] = criterionGAN(pred_fake, False, for_discriminator=True)
+        D_losses['D_Real'] = criterionGAN(pred_real, True, for_discriminator=True)
 
-        D_body_losses = {}
         D_Fake_body_parts_losses = {}
         D_Real_body_parts_losses = {}
         for i in range(5):
             D_Fake_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_fake[i], False, for_discriminator=True)
             D_Real_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_real[i], True, for_discriminator=True)
-        D_body_losses['D_Fake_body_parts_losses'] = sum(D_Fake_body_parts_losses.values()).mean()
-        D_body_losses['D_Real_body_parts_losses'] = sum(D_Real_body_parts_losses.values()).mean()
-        loss_body = sum(D_body_losses.values()).mean()
+        D_losses['D_Fake_body_parts_losses'] = sum(D_Fake_body_parts_losses.values()).mean()
+        D_losses['D_Real_body_parts_losses'] = sum(D_Real_body_parts_losses.values()).mean()
+        loss_body = sum(D_losses.values()).mean()
 
-        print(D_body_losses)
-        # loss_dis = sum(D_losses.values()).mean()
-        # print("Loss loss_dis", loss_dis)
+        print(D_losses)
+        loss_dis = sum(D_losses.values()).mean()
+        print("Loss loss_dis", loss_dis)
         # print("Loss loss_body", loss_body)
         # print("Loss D_Fake", D_losses['D_Fake'])
         # print("Loss D_Real", D_losses['D_Real'])
@@ -516,8 +515,8 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             with amp.scale_loss(loss_dis, optimizer_dis, loss_id=1) as loss_dis_scaled:
                 loss_dis_scaled.backward()
         else:
-            # loss_dis.backward()
-            loss_body.backward(retain_graph=True)
+            loss_dis.backward()
+            # loss_body.backward()
         optimizer_dis.step()
         # --------------------------------------------------------------------------------------------------------------
         #                                            recording
