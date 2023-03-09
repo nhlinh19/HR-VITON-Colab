@@ -4,3 +4,4 @@ model/
 tensorboard/
 desktop.ini
 __pycache__/
+checkpoints/

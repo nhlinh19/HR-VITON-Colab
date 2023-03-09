@@ -37,7 +37,7 @@ def get_opt():
     parser.add_argument('--name', type=str, required=True)
     parser.add_argument('--gpu_ids', default="0")
     parser.add_argument('-j', '--workers', type=int, default=1)
-    parser.add_argument('-b', '--batch_size', type=int, default=4)
+    parser.add_argument('-b', '--batch_size', type=int, default=8)
     parser.add_argument('--fp16', action='store_true', help='use amp')
     # Cuda availability
     parser.add_argument('--cuda',default=True, help='cuda or cpu')
@@ -45,8 +45,8 @@ def get_opt():
     parser.add_argument("--dataroot", default="./data/")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
-    parser.add_argument("--fine_width", type=int, default=384)
-    parser.add_argument("--fine_height", type=int, default=512)
+    parser.add_argument("--fine_width", type=int, default=192)
+    parser.add_argument("--fine_height", type=int, default=256)
     parser.add_argument("--radius", type=int, default=20)
     parser.add_argument("--grid_size", type=int, default=5)
 
@@ -56,9 +56,9 @@ def get_opt():
     parser.add_argument('--gen_checkpoint', type=str, default='', help='gen checkpoint')
     parser.add_argument('--dis_checkpoint', type=str, default='', help='dis checkpoint')
 
-    parser.add_argument("--tensorboard_count", type=int, default=100)
+    parser.add_argument("--tensorboard_count", type=int, default=10)
     parser.add_argument("--display_count", type=int, default=100)
-    parser.add_argument("--save_count", type=int, default=10000)
+    parser.add_argument("--save_count", type=int, default=100)
     parser.add_argument("--load_step", type=int, default=0)
     parser.add_argument("--keep_step", type=int, default=100000)
     parser.add_argument("--decay_step", type=int, default=100000)
@@ -111,7 +111,8 @@ def get_opt():
     parser.add_argument("--num_test_visualize", type=int, default=3)
 
     # bounding box
-    parser.add_argument("--bbox_max_size", default=[[1.0, 1.0], [1.0, 0.6979166666666666], [0.91015625, 0.9635416666666666], [0.73046875, 0.6614583333333334], [0.765625, 0.7604166666666666], [0.7734375, 0.7005208333333334], [0.0, 0.0]])
+    parser.add_argument("--bbox_max_size", default=[[0.3520238681102362, 0.3265102116141732], [0.4945308655265748, 0.5477464730971129], [0.29374154158464566, 0.46564089156824146], [0.33411509596456695, 0.15164528994422571], [0.35114246278297245, 0.14647924868766404]])
+    parser.add_argument("--add_body_loss", default=False)
 
     opt = parser.parse_args()
 
@@ -141,10 +142,11 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
     print(bbox_max_size)
 
     # discriminator_label
-    discriminator_body_parts = []
-    for i in range(5):
-        discriminator_body_parts.append(create_network(MultiscaleDiscriminator, opt, 0))
-        discriminator_body_parts[i].train()
+    if opt.add_body_loss:
+        discriminator_body_parts = []
+        for i in range(5):
+            discriminator_body_parts.append(create_network(MultiscaleDiscriminator, opt, 0))
+            discriminator_body_parts[i].train()
 
     # Model
     if not opt.GT:
@@ -171,9 +173,10 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
     scheduler_gen = torch.optim.lr_scheduler.LambdaLR(optimizer_gen, lr_lambda=lambda step: 1.0 -
             max(0, step * 1000 + opt.load_step - opt.keep_step) / float(opt.decay_step + 1))
 
-    optimizer_dis_parameters = [] #list(discriminator.parameters())
-    for i in range(5):
-        optimizer_dis_parameters += list(discriminator_body_parts[i].parameters())
+    optimizer_dis_parameters = list(discriminator.parameters())
+    if opt.add_body_loss:
+        for i in range(5):
+            optimizer_dis_parameters += list(discriminator_body_parts[i].parameters())
     optimizer_dis = torch.optim.Adam(optimizer_dis_parameters, lr=opt.D_lr, betas=(0, 0.9))
     
     scheduler_dis = torch.optim.lr_scheduler.LambdaLR(optimizer_dis, lr_lambda=lambda step: 1.0 -
@@ -225,7 +228,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         im = inputs['image'].cuda()
         print("end load data")
         with torch.no_grad():
-            if opt.GT:
+            if not opt.GT:
                 print("tocg")
                 # Warping Cloth
                 # down
@@ -320,12 +323,14 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                 3:  ['left_arm',    [5]],
                 4:  ['right_arm',   [6]],
             }
-            body_parts_parse = torch.FloatTensor(fake_parse.size(0), 5, opt.fine_height, opt.fine_width).zero_().cuda()
-            for i in range(len(body_parts_labels)):
-                for label in body_parts_labels[i][1]:
-                    body_parts_parse[:, i] += old_parse[:, label]
 
-            body_parts_parse.detach()
+            if opt.add_body_loss:
+                body_parts_parse = torch.FloatTensor(fake_parse.size(0), 5, opt.fine_height, opt.fine_width).zero_().cuda()
+                for i in range(len(body_parts_labels)):
+                    for label in body_parts_labels[i][1]:
+                        body_parts_parse[:, i] += old_parse[:, label]
+
+                body_parts_parse.detach()
             print("--Start generater")
         # --------------------------------------------------------------------------------------------------------------
         #                                              Train the generator
@@ -347,11 +352,20 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         #         print(f"--Predict[{i}][{j}] shape: {pred[i][j].shape}")
 
         # body_parts
-        # body_parts_fake = crop_boxes_batch(output_paired, parse, bbox_max_size)
-        # body_parts_real = crop_boxes_batch(im, parse, bbox_max_size)
-        # body_parts_pred = []
-        # for i in range(5):
-        #     body_parts_pred.append(discriminator_body_parts[i](torch.cat((body_parts_fake[i], body_parts_real[i]), dim=0)))
+        if opt.add_body_loss:
+            body_parts_fake = crop_boxes_batch(output_paired, body_parts_parse, bbox_max_size)
+            body_parts_real = crop_boxes_batch(im, body_parts_parse, bbox_max_size)
+            body_parts_pred = []
+            # body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [2*batch, output_channel, height_feature, width_feature]
+            # body_parts_pred_real = []
+            for i in range(5):
+                # body_parts_pred_fake.append(
+                #     discriminator_body_parts[i](body_parts_fake[i])
+                # )
+                # body_parts_pred_real.append(
+                #     discriminator_body_parts[i](body_parts_real[i])
+                # )
+                body_parts_pred.append(discriminator_body_parts[i](torch.cat((body_parts_fake[i], body_parts_real[i]), dim=0)))
 
         # the prediction contains the intermediate outputs of multiscale GAN,
         # so it's usually a list
@@ -365,28 +379,31 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             pred_fake = pred[:pred.size(0) // 2]
             pred_real = pred[pred.size(0) // 2:]
 
-        # body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
-        # body_parts_pred_real = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
-        # for i in range(5):
-        #     if type(body_parts_pred) == list:
-        #         pred_fake_body = []
-        #         pred_real_body = []
-        #         for p in body_parts_pred[i]:
-        #             pred_fake_body.append([tensor[:tensor.size(0) // 2] for tensor in p])
-        #             pred_real_body.append([tensor[tensor.size(0) // 2:] for tensor in p])
-        #     else:
-        #         pred_fake_body = body_parts_pred[:body_parts_pred.size(0) // 2]
-        #         pred_real_body = body_parts_pred[body_parts_pred.size(0) // 2:]
+        if opt.add_body_loss:
+            body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
+            body_parts_pred_real = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
+            for i in range(5):
+                if type(body_parts_pred[i]) == list:
+                    pred_fake_body = []
+                    pred_real_body = []
+                    for p in body_parts_pred[i]:
+                        pred_fake_body.append([tensor[:tensor.size(0) // 2] for tensor in p])
+                        pred_real_body.append([tensor[tensor.size(0) // 2:] for tensor in p])
+                else:
+                    pred_fake_body = body_parts_pred[:body_parts_pred.size(0) // 2]
+                    pred_real_body = body_parts_pred[body_parts_pred.size(0) // 2:]
 
-        #     body_parts_pred_fake.append(pred_fake_body)
-        #     body_parts_pred_real.append(pred_real_body)
+                body_parts_pred_fake.append(pred_fake_body)
+                body_parts_pred_real.append(pred_real_body)
 
         G_losses = {}
         G_losses['GAN'] = criterionGAN(pred_fake, True, for_discriminator=False)
-        # G_body_parts_losses = {}
-        # for i in range(5):
-        #     G_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_fake[i], True, for_discriminator=False)
-        # G_losses['GAN_Body_Parts'] = sum(G_body_parts_losses.values()).mean()
+
+        if opt.add_body_loss:
+            G_body_parts_losses = {}
+            for i in range(5):
+                G_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_fake[i], True, for_discriminator=False)
+            G_losses['GAN_Body_Parts'] = sum(G_body_parts_losses.values()).mean()
         # loss_body_parts_dis = 
 
         if not opt.no_ganFeat_loss:
@@ -404,10 +421,11 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             G_losses['VGG'] = criterionVGG(output_paired, im) * opt.lambda_vgg
 
         loss_gen = sum(G_losses.values()).mean()
+        print(G_losses)
         print("Loss gen:", loss_gen)
-        print("Loss GAN:", G_losses['GAN'])
+        # print("Loss GAN:", G_losses['GAN'])
         # print("Loss GAN_Feat:", G_losses['GAN_Feat'])
-        print("Loss VGG:", G_losses['VGG'])
+        # print("Loss VGG:", G_losses['VGG'])
         # print("Loss GAN_Body_Parts:", G_losses['GAN_Body_Parts'])
 
         optimizer_gen.zero_grad()
@@ -431,19 +449,20 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         real_concat = torch.cat((parse, im), dim=1)
         pred = discriminator(torch.cat((fake_concat, real_concat), dim=0))
 
-
-        body_parts_fake = crop_boxes_batch(output, parse, bbox_max_size) # [5][batch, 3, height_body_part, width_body_part]
-        body_parts_real = crop_boxes_batch(im, parse, bbox_max_size) # [5][batch, 3, height_body_part, width_body_part]
-        body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [2*batch, output_channel, height_feature, width_feature]
-        body_parts_pred_real = []
-        for i in range(5):
-            body_parts_pred_fake.append(
-                discriminator_body_parts[i](body_parts_fake[i])
-            )
-            body_parts_pred_real.append(
-                discriminator_body_parts[i](body_parts_real[i])
-            )
-            # body_parts_pred.append(discriminator_body_parts[i](torch.cat((body_parts_fake[i], body_parts_real[i]), dim=0)))
+        if opt.add_body_loss:
+            body_parts_fake = crop_boxes_batch(output, body_parts_parse, bbox_max_size) # [5][batch, 3, height_body_part, width_body_part]
+            body_parts_real = crop_boxes_batch(im, body_parts_parse, bbox_max_size) # [5][batch, 3, height_body_part, width_body_part]
+            body_parts_pred = []
+            # body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [2*batch, output_channel, height_feature, width_feature]
+            # body_parts_pred_real = []
+            for i in range(5):
+                # body_parts_pred_fake.append(
+                #     discriminator_body_parts[i](body_parts_fake[i])
+                # )
+                # body_parts_pred_real.append(
+                #     discriminator_body_parts[i](body_parts_real[i])
+                # )
+                body_parts_pred.append(discriminator_body_parts[i](torch.cat((body_parts_fake[i], body_parts_real[i]), dim=0)))
 
         # the prediction contains the intermediate outputs of multiscale GAN,
         # so it's usually a list
@@ -457,32 +476,31 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             pred_fake = pred[:pred.size(0) // 2]
             pred_real = pred[pred.size(0) // 2:]
 
-        # body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
-        # body_parts_pred_real = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
-        # for i in range(5):
-        #     if type(body_parts_pred[i]) == list:
-        #         pred_fake_body = []
-        #         pred_real_body = []
-        #         for p in body_parts_pred[i]:
-        #             pred_fake_body.append([tensor[:tensor.size(0) // 2] for tensor in p])
-        #             pred_real_body.append([tensor[tensor.size(0) // 2:] for tensor in p])
-        #     else:
-        #         pred_fake_body = body_parts_pred[:body_parts_pred.size(0) // 2]
-        #         pred_real_body = body_parts_pred[body_parts_pred.size(0) // 2:]
+        if opt.add_body_loss:
+            body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
+            body_parts_pred_real = [] # [5][2, 4] tensor of feature layer [batch, output_channel, height_feature, width_feature]
+            for i in range(5):
+                if type(body_parts_pred[i]) == list:
+                    pred_fake_body = []
+                    pred_real_body = []
+                    for p in body_parts_pred[i]:
+                        pred_fake_body.append([tensor[:tensor.size(0) // 2] for tensor in p])
+                        pred_real_body.append([tensor[tensor.size(0) // 2:] for tensor in p])
+                else:
+                    pred_fake_body = body_parts_pred[:body_parts_pred.size(0) // 2]
+                    pred_real_body = body_parts_pred[body_parts_pred.size(0) // 2:]
 
-        #     body_parts_pred_fake.append(pred_fake_body)
-        #     body_parts_pred_real.append(pred_real_body)
-        
-        # for i in range(5):
+                body_parts_pred_fake.append(pred_fake_body)
+                body_parts_pred_real.append(pred_real_body)
 
         
         # for i in range(len(pred_fake)):
         #     for j in range(len(pred_fake[i])):
         #         print(f"--pred_fake[{i}][{j}] shape: {pred_fake[i][j].shape}")
 
-        for i in range(len(body_parts_pred_fake[0])):
-            for j in range(len(body_parts_pred_fake[0][i])):
-                print(f"--pred_fake[{i}][{j}] shape: {body_parts_pred_fake[0][i][j].shape}")
+        # for i in range(len(body_parts_pred_fake[0])):
+        #     for j in range(len(body_parts_pred_fake[0][i])):
+        #         print(f"--pred_fake[{i}][{j}] shape: {body_parts_pred_fake[0][i][j].shape}")
         
         # for i in range(len(pred_real)):
         #     for j in range(len(pred_real[i])):
@@ -492,17 +510,18 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         D_losses['D_Fake'] = criterionGAN(pred_fake, False, for_discriminator=True)
         D_losses['D_Real'] = criterionGAN(pred_real, True, for_discriminator=True)
 
-        D_Fake_body_parts_losses = {}
-        D_Real_body_parts_losses = {}
-        for i in range(5):
-            D_Fake_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_fake[i], False, for_discriminator=True)
-            D_Real_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_real[i], True, for_discriminator=True)
-        D_losses['D_Fake_body_parts_losses'] = sum(D_Fake_body_parts_losses.values()).mean()
-        D_losses['D_Real_body_parts_losses'] = sum(D_Real_body_parts_losses.values()).mean()
-        loss_body = sum(D_losses.values()).mean()
+        if opt.add_body_loss:
+            D_Fake_body_parts_losses = {}
+            D_Real_body_parts_losses = {}
+            for i in range(5):
+                D_Fake_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_fake[i], False, for_discriminator=True)
+                D_Real_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_real[i], True, for_discriminator=True)
+            D_losses['D_Fake_body_parts_losses'] = sum(D_Fake_body_parts_losses.values()).mean()
+            D_losses['D_Real_body_parts_losses'] = sum(D_Real_body_parts_losses.values()).mean()
+            loss_body = sum(D_losses.values()).mean()
 
-        print(D_losses)
         loss_dis = sum(D_losses.values()).mean()
+        print(D_losses)
         print("Loss loss_dis", loss_dis)
         # print("Loss loss_body", loss_body)
         # print("Loss D_Fake", D_losses['D_Fake'])
@@ -536,6 +555,10 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             board.add_scalar('Loss/dis', loss_dis.item(), step + 1)
             board.add_scalar('Loss/dis/adv_fake', D_losses['D_Fake'].mean().item(), step + 1)
             board.add_scalar('Loss/dis/adv_real', D_losses['D_Real'].mean().item(), step + 1)
+            if opt.add_body_loss:
+                board.add_scalar('Loss/gen/adv_body', G_losses['GAN_Body_Parts'].mean().item(), step + 1)
+                board.add_scalar('Loss/dis/adv_fake_body', D_losses['D_Fake_body_parts_losses'].mean().item(), step + 1)
+                board.add_scalar('Loss/dis/adv_real_body', D_losses['D_Real_body_parts_losses'].mean().item(), step + 1)
             
             # unpaired visualize
             generator.eval()
@@ -571,7 +594,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                     flow_list, fake_segmap, _, warped_clothmask_paired = tocg(opt, input1, input2)
                     
                     # warped cloth mask one hot 
-                    warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                    warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
                     
                     if opt.clothmask_composition != 'no_composition':
                         if opt.clothmask_composition == 'detach':

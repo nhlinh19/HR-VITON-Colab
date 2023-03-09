@@ -21,8 +21,8 @@ def get_opt():
     parser.add_argument("--dataroot", default="./data/")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
-    parser.add_argument("--fine_width", type=int, default=768)
-    parser.add_argument("--fine_height", type=int, default=1024)
+    parser.add_argument("--fine_width", type=int, default=192)
+    parser.add_argument("--fine_height", type=int, default=256)
     parser.add_argument("--radius", type=int, default=20)
     parser.add_argument("--grid_size", type=int, default=5)
 
