@@ -24,6 +24,11 @@ import eval_models as models
 import torchgeometry as tgm
 from bounding_box import find_bouding_box, crop_boxes_batch
 
+from PIL import Image
+from torchvision.models.inception import inception_v3
+from scipy.stats import entropy
+from skimage.metrics import structural_similarity as ssim
+
 def remove_overlap(seg_out, warped_cm):
     
     assert len(warped_cm.shape) == 4
@@ -65,7 +70,7 @@ def get_opt():
     parser.add_argument("--shuffle", action='store_true', help='shuffle input data')
     
     # test
-    parser.add_argument("--lpips_count", type=int, default=1000)
+    parser.add_argument("--lpips_count", type=int, default=100)
     parser.add_argument("--test_datasetting", default="paired")
     parser.add_argument("--test_dataroot", default="./data/")
     parser.add_argument("--test_data_list", default="test_pairs.txt")
@@ -80,9 +85,9 @@ def get_opt():
     parser.add_argument('--gen_semantic_nc', type=int, default=7, help='# of input label classes without unknown class')
     parser.add_argument('--norm_G', type=str, default='spectralaliasinstance', help='instance normalization or batch normalization')
     parser.add_argument('--norm_D', type=str, default='spectralinstance', help='instance normalization or batch normalization')
-    parser.add_argument('--ngf', type=int, default=32, help='# of gen filters in first conv layer')
-    parser.add_argument('--ndf', type=int, default=32, help='# of discrim filters in first conv layer')
-    parser.add_argument('--num_upsampling_layers', choices=['normal', 'more', 'most'], default='more',
+    parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer') # 64
+    parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer') # 64
+    parser.add_argument('--num_upsampling_layers', choices=['normal', 'more', 'most'], default='more', # most
                     help='If \'more\', add upsampling layer between the two middle resnet blocks. '
                             'If \'most\', also add one more (upsampling + resnet) layer at the end of the generator.')
     parser.add_argument('--init_type', type=str, default='xavier', help='network initialization [normal|xavier|kaiming|orthogonal]')
@@ -112,7 +117,8 @@ def get_opt():
 
     # bounding box
     parser.add_argument("--bbox_max_size", default=[[0.3520238681102362, 0.3265102116141732], [0.4945308655265748, 0.5477464730971129], [0.29374154158464566, 0.46564089156824146], [0.33411509596456695, 0.15164528994422571], [0.35114246278297245, 0.14647924868766404]])
-    parser.add_argument("--add_body_loss", default=False)
+    parser.add_argument("--add_body_loss", default=False) 
+    parser.add_argument("--num_evaluate", default=50)
 
     opt = parser.parse_args()
 
@@ -338,10 +344,11 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         # print("agnostic shape: ", agnostic.shape) # [batch, 3, height, width]
         # print("pose shape: ", pose.shape) # [batch, 3, height, width]
         # print("warped_cloth_paired shape: ", warped_cloth_paired.shape) # [batch, 3, height, width]
-        input_1 = torch.cat((agnostic, pose, warped_cloth_paired), dim=1) 
-        
-        output_paired = generator(input_1, parse)
+
+        output_paired = generator(torch.cat((agnostic, pose, warped_cloth_paired), dim=1), parse)
         # print("output_paired shape: ", output_paired.shape) # [batch, 3, height, width]
+        # print("parse shape: ", parse.shape) # [batch, 3, height, width]
+        # print("im shape: ", im.shape) # [batch, 3, height, width]
         print("--Done generate")
         fake_concat = torch.cat((parse, output_paired), dim=1) # [batch, 3 + num_labels, height, width]
         real_concat = torch.cat((parse, im), dim=1) # [batch, 3 + num_labels, height, width]
@@ -662,13 +669,30 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
 
         if (step + 1) % opt.lpips_count == 0:
             generator.eval()
+            T1 = transforms.ToTensor()
             T2 = transforms.Compose([transforms.Resize((128, 128))])
+            T3 = transforms.Compose([transforms.Resize((299, 299)),
+                            transforms.ToTensor(),
+                            transforms.Normalize(mean=(0.5, 0.5, 0.5),
+                                                 std=(0.5, 0.5, 0.5))])
+
+            splits = 1 # Hyper-parameter for IS score
+
+            inception_model = inception_v3(pretrained=True, transform_input=False).type(torch.cuda.FloatTensor)
+            inception_model.eval()
+
+            num_img = opt.num_evaluate
             lpips_list = []
-            avg_distance = 0.0
+            avg_ssim, avg_mse, avg_distance = 0.0, 0.0, 0.0
+            preds = np.zeros((100, 1000))
+            transform = transforms.ToPILImage()
+
+            # Calculate Inception Score
+            split_scores = [] # Now compute the mean kl-divergence
             
             with torch.no_grad():
-                print("LPIPS")
-                for i in tqdm(range(500)):
+                print("Evaluate")
+                for i in tqdm(range(num_img)):
                     inputs = test_loader.next_batch()
                     # input
                     agnostic = inputs['agnostic'].cuda()
@@ -758,11 +782,49 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                     
                     output_paired = generator(torch.cat((agnostic, pose, warped_cloth_paired), dim=1), parse)
                     
+                    gt_img = transform(im[0])
+                    pred_img = transform(output_paired[0])
+
+                    # Calculate SSIM
+                    gt_np = np.asarray(gt_img.convert('L'))
+                    assert gt_img.size == pred_img.size, f"{gt_img.size} vs {pred_img.size}"
+                    pred_np = np.asarray(pred_img.convert('L'))
+                    avg_ssim += ssim(gt_np, pred_np, data_range=255, gaussian_weights=True, use_sample_covariance=False)
+
+                    # Calculate Inception model prediction
+                    pred_img_IS = T3(pred_img).unsqueeze(0).cuda()
+                    preds[i] = F.softmax(inception_model(pred_img_IS)).data.cpu().numpy()
+
+                    gt_img_MSE = T1(gt_img).unsqueeze(0).cuda()
+                    pred_img_MSE = T1(pred_img).unsqueeze(0).cuda()
+                    avg_mse += F.mse_loss(gt_img_MSE, pred_img_MSE)
+
+                    # Caculate Lpips
                     avg_distance += model.forward(T2(im), T2(output_paired))
+
+                print("Calculate Inception Score...")
+                for k in range(splits):
+                    part = preds[k * (num_img // splits): (k+1) * (num_img // splits), :]
+                    py = np.mean(part, axis=0)
+                    scores = []
+                    for i in range(part.shape[0]):
+                        pyx = part[i, :]
+                        scores.append(entropy(pyx + 1e-10, py + 1e-10))
+                    split_scores.append(np.exp(np.mean(scores)))
+
+                IS_mean, IS_std = np.mean(split_scores), np.std(split_scores)
+
+            avg_ssim /= num_img
+            avg_mse = avg_mse / num_img
+            avg_distance = avg_distance / num_img
                     
-            avg_distance = avg_distance / 500
-            print(f"LPIPS{avg_distance}")
+            print(f"SSIM : {avg_ssim} / MSE : {avg_mse} / LPIPS : {avg_distance}")
+            print(f"IS_mean : {IS_mean} / IS_std : {IS_std}")
+            board.add_scalar('test/SSIM', avg_ssim, step + 1)
+            board.add_scalar('test/MSE', avg_mse, step + 1)
             board.add_scalar('test/LPIPS', avg_distance, step + 1)
+            board.add_scalar('test/IS_mean', IS_mean, step + 1)
+            board.add_scalar('test/IS_std', IS_std, step + 1)
                 
             generator.train()
 

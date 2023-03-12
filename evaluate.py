@@ -17,9 +17,9 @@ import eval_models as models
 def get_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--evaluation', default='LPIPS')
-    parser.add_argument('--predict_dir', default='./output')
+    parser.add_argument('--predict_dir', default='./output/test_gen_body_paired')
     parser.add_argument('--ground_truth_dir', default='./data/test/image')
-    parser.add_argument('--resolution', type=int, default=1024)
+    parser.add_argument('--resolution', type=int, default=256)
     
 
     opt = parser.parse_args()
@@ -44,13 +44,15 @@ def Evaluation(opt, pred_list, gt_list):
     inception_model.eval()
 
     avg_ssim, avg_mse, avg_distance = 0.0, 0.0, 0.0
-    preds = np.zeros((len(gt_list), 1000))
+    preds = np.zeros((10, 1000))
     lpips_list = []
+    num_img = 0
     with torch.no_grad():
         print("Calculate SSIM, MSE, LPIPS...")
         for i, img_pred in enumerate(pred_list):
             if ('.png' not in img_pred):
                 continue
+            num_img += 1
             img = img_pred.split('_')[0] + '_00.jpg'
             # Calculate SSIM
             gt_img = Image.open(os.path.join(opt.ground_truth_dir, img))
@@ -61,16 +63,21 @@ def Evaluation(opt, pred_list, gt_list):
                     gt_img = gt_img.resize((192,256), Image.BILINEAR)
                 else:
                     raise NotImplementedError
-            
+
             gt_np = np.asarray(gt_img.convert('L'))
+            # print(gt_np)
             pred_img = Image.open(os.path.join(opt.predict_dir, img_pred))
             assert gt_img.size == pred_img.size, f"{gt_img.size} vs {pred_img.size}"
             pred_np = np.asarray(pred_img.convert('L'))
+            # gt_img.save(f'./output/torch/eval_gt.png')
+            # pred_img.save(f'./output/torch/eval_pred.png')
+            print(f"Ssim{img_pred}: ", ssim(gt_np, pred_np, data_range=255, gaussian_weights=True, use_sample_covariance=False))
             avg_ssim += ssim(gt_np, pred_np, data_range=255, gaussian_weights=True, use_sample_covariance=False)
 
             # Calculate LPIPS
             gt_img_LPIPS = T2(gt_img).unsqueeze(0).cuda()
             pred_img_LPIPS = T2(pred_img).unsqueeze(0).cuda()
+            print(f"Shape gt_img_LPIPS: {gt_img_LPIPS.shape}")
             lpips_list.append((img_pred, model.forward(gt_img_LPIPS, pred_img_LPIPS).item()))
             avg_distance += lpips_list[-1][1]
             # Calculate Inception model prediction
@@ -83,9 +90,11 @@ def Evaluation(opt, pred_list, gt_list):
 
             print(f"step: {i+1} evaluation... lpips:{lpips_list[-1][1]}")
 
-        avg_ssim /= len(gt_list)
-        avg_mse = avg_mse / len(gt_list)
-        avg_distance = avg_distance / len(gt_list)
+        print(f"avg_ssim: {avg_ssim}")
+        print(f"num_img: {num_img}")
+        avg_ssim /= num_img
+        avg_mse = avg_mse / num_img
+        avg_distance = avg_distance / num_img
 
         # Calculate Inception Score
         split_scores = [] # Now compute the mean kl-divergence
@@ -97,7 +106,7 @@ def Evaluation(opt, pred_list, gt_list):
             f.close()
         print("Calculate Inception Score...")
         for k in range(splits):
-            part = preds[k * (len(gt_list) // splits): (k+1) * (len(gt_list) // splits), :]
+            part = preds[k * (num_img // splits): (k+1) * (num_img // splits), :]
             print(part.shape)
             py = np.mean(part, axis=0)
             print(py.shape)

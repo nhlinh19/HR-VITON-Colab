@@ -36,10 +36,10 @@ def get_opt():
     parser.add_argument("--dataroot", default="./data")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
-    parser.add_argument("--output_dir", type=str, default="./output")
-    parser.add_argument("--datasetting", default="unpaired")
-    parser.add_argument("--fine_width", type=int, default=768)
-    parser.add_argument("--fine_height", type=int, default=1024)
+    parser.add_argument("--output_dir", type=str, default="./output/test_gen_original_paired")
+    parser.add_argument("--datasetting", default="paired")
+    parser.add_argument("--fine_width", type=int, default=192)
+    parser.add_argument("--fine_height", type=int, default=256)
 
     parser.add_argument('--tensorboard_dir', type=str, default='./data/tensorboard', help='save tensorboard infos')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')
@@ -81,6 +81,10 @@ def load_checkpoint_G(model, checkpoint_path,opt):
     state_dict = torch.load(checkpoint_path)
     new_state_dict = OrderedDict([(k.replace('ace', 'alias').replace('.Spade', ''), v) for (k, v) in state_dict.items()])
     new_state_dict._metadata = OrderedDict([(k.replace('ace', 'alias').replace('.Spade', ''), v) for (k, v) in state_dict._metadata.items()])
+    # print("--new_state_dict")
+    # print(new_state_dict)
+    # print("--new_state_dict._metadata")
+    # print(new_state_dict._metadata)
     model.load_state_dict(new_state_dict, strict=True)
     if opt.cuda :
         model.cuda()
@@ -103,7 +107,7 @@ def test(opt, test_loader, tocg, generator):
     else:
         output_dir = os.path.join('./output', opt.test_name,
                             opt.datamode, opt.datasetting, 'generator', 'output')
-    grid_dir = os.path.join('./output', opt.test_name,
+    grid_dir = os.path.join(output_dir, opt.test_name,
                              opt.datamode, opt.datasetting, 'generator', 'grid')
     
     os.makedirs(grid_dir, exist_ok=True)
@@ -127,17 +131,17 @@ def test(opt, test_loader, tocg, generator):
                 input_label, input_parse_agnostic = label.cuda(), parse_agnostic.cuda()
                 pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
 
-                print(f"pose_map shape: {pose_map.shape}")
-                print(f"pre_clothes_mask shape: {pre_clothes_mask.shape}")
-                print(f"label shape: {label.shape}")
-                print(f"parse_agnostic shape: {parse_agnostic.shape}")
-                print(f"agnostic shape: {agnostic.shape}")
-                print(f"clothes shape: {clothes.shape}")
-                print(f"densepose shape: {densepose.shape}")
-                print(f"im shape: {im.shape}")
-                print(f"input_label shape: {input_label.shape}")
-                print(f"input_parse_agnostic shape: {input_parse_agnostic.shape}")
-                print(f"pre_clothes_mask shape after processing: {pre_clothes_mask.shape}")
+                # print(f"pose_map shape: {pose_map.shape}")
+                # print(f"pre_clothes_mask shape: {pre_clothes_mask.shape}")
+                # print(f"label shape: {label.shape}")
+                # print(f"parse_agnostic shape: {parse_agnostic.shape}")
+                # print(f"agnostic shape: {agnostic.shape}")
+                # print(f"clothes shape: {clothes.shape}")
+                # print(f"densepose shape: {densepose.shape}")
+                # print(f"im shape: {im.shape}")
+                # print(f"input_label shape: {input_label.shape}")
+                # print(f"input_parse_agnostic shape: {input_parse_agnostic.shape}")
+                # print(f"pre_clothes_mask shape after processing: {pre_clothes_mask.shape}")
             else :
                 pose_map = inputs['pose']
                 pre_clothes_mask = inputs['cloth_mask'][opt.datasetting]
@@ -169,16 +173,16 @@ def test(opt, test_loader, tocg, generator):
 
             # forward
             flow_list, fake_segmap, warped_cloth_paired, warped_clothmask_paired = tocg(opt,input1, input2)
-            print("fake_segmap shape: ", fake_segmap.shape)
-            print("warped_cloth_paired shape: ", warped_cloth_paired.shape)
-            print("warped_clothmask_paired shape: ", warped_clothmask_paired.shape)
+            # print("fake_segmap shape: ", fake_segmap.shape)
+            # print("warped_cloth_paired shape: ", warped_cloth_paired.shape)
+            # print("warped_clothmask_paired shape: ", warped_clothmask_paired.shape)
             
             # warped cloth mask one hot
             if opt.cuda :
                 warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
             else :
                 warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float))
-            print("warped_cm_onehot shape: ", warped_cm_onehot.shape)
+            # print("warped_cm_onehot shape: ", warped_cm_onehot.shape)
 
             if opt.clothmask_composition != 'no_composition':
                 if opt.clothmask_composition == 'detach':
@@ -190,18 +194,18 @@ def test(opt, test_loader, tocg, generator):
                     cloth_mask = torch.ones_like(fake_segmap)
                     cloth_mask[:,3:4, :, :] = warped_clothmask_paired
                     fake_segmap = fake_segmap * cloth_mask
-            print("fake_segmap after shape: ", fake_segmap.shape)
+            # print("fake_segmap after shape: ", fake_segmap.shape)
             # make generator input parse map
             fake_parse_gauss = gauss(F.interpolate(fake_segmap, size=(opt.fine_height, opt.fine_width), mode='bilinear'))
             fake_parse = fake_parse_gauss.argmax(dim=1)[:, None]
-            print("fake_parse_gauss after shape: ", fake_parse_gauss.shape)
-            print("fake_parse after shape: ", fake_parse.shape)
+            # print("fake_parse_gauss after shape: ", fake_parse_gauss.shape)
+            # print("fake_parse after shape: ", fake_parse.shape)
             if opt.cuda :
                 old_parse = torch.FloatTensor(fake_parse.size(0), 13, opt.fine_height, opt.fine_width).zero_().cuda()
             else:
                 old_parse = torch.FloatTensor(fake_parse.size(0), 13, opt.fine_height, opt.fine_width).zero_()
             old_parse.scatter_(1, fake_parse, 1.0)
-            print("old_parse after shape: ", old_parse.shape)
+            # print("old_parse after shape: ", old_parse.shape)
             labels = {
                 0:  ['background',  [0]],
                 1:  ['paste',       [2, 4, 7, 8, 9, 10, 11]],
@@ -218,7 +222,7 @@ def test(opt, test_loader, tocg, generator):
             for i in range(len(labels)):
                 for label in labels[i][1]:
                     parse[:, i] += old_parse[:, label]
-            print("parse after shape: ", parse.shape)   
+            # print("parse after shape: ", parse.shape)   
             # warped cloth
             N, _, iH, iW = clothes.shape
             flow = F.interpolate(flow_list[-1].permute(0, 3, 1, 2), size=(iH, iW), mode='bilinear').permute(0, 2, 3, 1)
@@ -234,18 +238,18 @@ def test(opt, test_loader, tocg, generator):
             
 
             output = generator(torch.cat((agnostic, densepose, warped_cloth), dim=1), parse)
-            print("output shape: ", output.shape)
+            # print("output shape: ", output.shape)
 
             # visualize
             unpaired_names = []
             for i in range(shape[0]):
-                grid = make_image_grid([(clothes[i].cpu() / 2 + 0.5), (pre_clothes_mask[i].cpu()).expand(3, -1, -1), visualize_segmap(parse_agnostic.cpu(), batch=i), ((densepose.cpu()[i]+1)/2),
-                                        (warped_cloth[i].cpu().detach() / 2 + 0.5), (warped_clothmask[i].cpu().detach()).expand(3, -1, -1), visualize_segmap(fake_parse_gauss.cpu(), batch=i),
-                                        (pose_map[i].cpu()/2 +0.5), (warped_cloth[i].cpu()/2 + 0.5), (agnostic[i].cpu()/2 + 0.5),
-                                        (im[i]/2 +0.5), (output[i].cpu()/2 +0.5)],
-                                        nrow=4)
+                # grid = make_image_grid([(clothes[i].cpu() / 2 + 0.5), (pre_clothes_mask[i].cpu()).expand(3, -1, -1), visualize_segmap(parse_agnostic.cpu(), batch=i), ((densepose.cpu()[i]+1)/2),
+                #                         (warped_cloth[i].cpu().detach() / 2 + 0.5), (warped_clothmask[i].cpu().detach()).expand(3, -1, -1), visualize_segmap(fake_parse_gauss.cpu(), batch=i),
+                #                         (pose_map[i].cpu()/2 +0.5), (warped_cloth[i].cpu()/2 + 0.5), (agnostic[i].cpu()/2 + 0.5),
+                #                         (im[i]/2 +0.5), (output[i].cpu()/2 +0.5)],
+                #                         nrow=4)
                 unpaired_name = (inputs['c_name']['paired'][i].split('.')[0] + '_' + inputs['c_name'][opt.datasetting][i].split('.')[0] + '.png')
-                save_image(grid, os.path.join(grid_dir, unpaired_name))
+                # save_image(grid, os.path.join(grid_dir, unpaired_name))
                 unpaired_names.append(unpaired_name)
                 
             # save output
@@ -253,6 +257,8 @@ def test(opt, test_loader, tocg, generator):
                 
             num += shape[0]
             print(num)
+            if (num == 10):
+                break
 
     print(f"Test time {time.time() - iter_start_time}")
 
