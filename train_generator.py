@@ -61,7 +61,7 @@ def get_opt():
     parser.add_argument('--gen_checkpoint', type=str, default='', help='gen checkpoint')
     parser.add_argument('--dis_checkpoint', type=str, default='', help='dis checkpoint')
 
-    parser.add_argument("--tensorboard_count", type=int, default=10)
+    parser.add_argument("--tensorboard_count", type=int, default=20)
     parser.add_argument("--display_count", type=int, default=100)
     parser.add_argument("--save_count", type=int, default=100)
     parser.add_argument("--load_step", type=int, default=0)
@@ -93,9 +93,9 @@ def get_opt():
     parser.add_argument('--init_type', type=str, default='xavier', help='network initialization [normal|xavier|kaiming|orthogonal]')
     parser.add_argument('--init_variance', type=float, default=0.02, help='variance of the initialization distribution')
 
-    parser.add_argument('--no_L1_loss', action='store_true', help='if specified, do *not* use L1 loss')
-    parser.add_argument('--no_ganFeat_loss', action='store_true', help='if specified, do *not* use discriminator feature matching loss')
-    parser.add_argument('--no_vgg_loss', action='store_true', help='if specified, do *not* use VGG feature matching loss')
+    parser.add_argument('--no_L1_loss', action='store_true',default=True, help='if specified, do *not* use L1 loss')
+    parser.add_argument('--no_ganFeat_loss', action='store_true',default=True, help='if specified, do *not* use discriminator feature matching loss')
+    parser.add_argument('--no_vgg_loss', action='store_true',default=True, help='if specified, do *not* use VGG feature matching loss')
     parser.add_argument('--lambda_l1', type=float, default=1.0, help='weight for feature matching loss')
     parser.add_argument('--lambda_feat', type=float, default=10.0, help='weight for feature matching loss')
     parser.add_argument('--lambda_vgg', type=float, default=10.0, help='weight for vgg loss')
@@ -118,7 +118,7 @@ def get_opt():
 
     # bounding box
     parser.add_argument("--bbox_max_size", default=[[0.3520238681102362, 0.3265102116141732], [0.4945308655265748, 0.5477464730971129], [0.29374154158464566, 0.46564089156824146], [0.33411509596456695, 0.15164528994422571], [0.35114246278297245, 0.14647924868766404]])
-    parser.add_argument("--add_body_loss", default=False) 
+    parser.add_argument("--add_body_loss", default=True) 
     parser.add_argument("--num_evaluate", default=50)
 
     opt = parser.parse_args()
@@ -205,6 +205,8 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             tocg = DataParallelWithCallback(tocg, device_ids=opt.gpu_ids)
         generator = DataParallelWithCallback(generator, device_ids=opt.gpu_ids)
         discriminator = DataParallelWithCallback(discriminator, device_ids=opt.gpu_ids)
+        for i in range(5):
+            discriminator_body_parts[i] = DataParallelWithCallback(discriminator_body_parts[i], device_ids=opt.gpu_ids)
         criterionGAN = DataParallelWithCallback(criterionGAN, device_ids=opt.gpu_ids)
         criterionL1 = DataParallelWithCallback(criterionL1, device_ids=opt.gpu_ids)
         criterionFeat = DataParallelWithCallback(criterionFeat, device_ids=opt.gpu_ids)
@@ -253,7 +255,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                 flow_list, fake_segmap, _, warped_clothmask_paired = tocg(opt, input1, input2)
                 
                 # warped cloth mask one hot 
-                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
                 
                 if opt.clothmask_composition != 'no_composition':
                     if opt.clothmask_composition == 'detach':
@@ -406,7 +408,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                 body_parts_pred_real.append(pred_real_body)
 
         G_losses = {}
-        G_losses['GAN'] = criterionGAN(pred_fake, True, for_discriminator=False)
+        # G_losses['GAN'] = criterionGAN(pred_fake, True, for_discriminator=False)
 
         if opt.add_body_loss:
             G_body_parts_losses = {}
@@ -430,15 +432,18 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             G_losses['VGG'] = criterionVGG(output_paired, im) * opt.lambda_vgg
 
         if not opt.no_L1_loss:
+            print("AddL1")
             G_losses['L1'] = criterionL1(output_paired, im) * opt.lambda_l1
-            G_L1_body_losses = {} 
-            for k in range(5):
-                G_L1_body_losses[f'{k}'] = 0
-                for i in range(len(body_parts_pred_fake[0])):
-                    for j in range(len(body_parts_pred_fake[0][i])):
-                        G_L1_body_losses[f'{k}'] += criterionL1(body_parts_pred_fake[k][i][j], body_parts_pred_real[k][i][j]) 
-                G_L1_body_losses[f'{k}'] *= opt.lambda_l1
-            G_losses['L1'] += sum(G_L1_body_losses.values()).mean()
+            # for i in range(5):
+            #     G_losses['L1'] = criterionL1(body_parts_fake[i], body_parts_real[i]) * opt.lambda_l1
+            # G_L1_body_losses = {} 
+            # for k in range(5):
+            #     G_L1_body_losses[f'{k}'] = 0
+            #     for i in range(len(body_parts_pred_fake[0])):
+            #         for j in range(len(body_parts_pred_fake[0][i])):
+            #             G_L1_body_losses[f'{k}'] += criterionL1(body_parts_pred_fake[k][i][j], body_parts_pred_real[k][i][j]) 
+            #     G_L1_body_losses[f'{k}'] *= opt.lambda_l1
+            # G_losses['L1'] += sum(G_L1_body_losses.values()).mean()
 
         loss_gen = sum(G_losses.values()).mean()
         print(G_losses)
@@ -527,8 +532,8 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         #         print(f"--pred_real[{i}][{j}] shape: {pred_real[i][j].shape}")
 
         D_losses = {}
-        D_losses['D_Fake'] = criterionGAN(pred_fake, False, for_discriminator=True)
-        D_losses['D_Real'] = criterionGAN(pred_real, True, for_discriminator=True)
+        # D_losses['D_Fake'] = criterionGAN(pred_fake, False, for_discriminator=True)
+        # D_losses['D_Real'] = criterionGAN(pred_real, True, for_discriminator=True)
 
         if opt.add_body_loss:
             D_Fake_body_parts_losses = {}
@@ -539,17 +544,6 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             D_losses['D_Fake_body_parts_losses'] = sum(D_Fake_body_parts_losses.values()).mean()
             D_losses['D_Real_body_parts_losses'] = sum(D_Real_body_parts_losses.values()).mean()
             # loss_body = sum(D_losses.values()).mean()
-        
-        if not opt.no_L1_loss:
-            D_losses['L1'] = criterionL1(output, im) * opt.lambda_l1
-            D_L1_body_losses = {} 
-            for k in range(5):
-                D_L1_body_losses[f'{k}'] = 0
-                for i in range(len(body_parts_pred_fake[0])):
-                    for j in range(len(body_parts_pred_fake[0][i])):
-                        D_L1_body_losses[f'{k}'] += criterionL1(body_parts_pred_fake[k][i][j], body_parts_pred_real[k][i][j]) 
-                D_L1_body_losses[f'{k}'] *= opt.lambda_l1
-            D_losses['L1'] += sum(D_L1_body_losses.values()).mean()
 
         loss_dis = sum(D_losses.values()).mean()
         print(D_losses)
@@ -579,14 +573,14 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                                     nrow=4)
             board.add_images('train_images', grid.unsqueeze(0), step + 1)
             board.add_scalar('Loss/gen', loss_gen.item(), step + 1)
-            board.add_scalar('Loss/gen/adv', G_losses['GAN'].mean().item(), step + 1)
-            board.add_scalar('Loss/gen/l1', G_losses['L1'].mean().item(), step + 1)
-            board.add_scalar('Loss/gen/feat', G_losses['GAN_Feat'].mean().item(), step + 1)
-            board.add_scalar('Loss/gen/vgg', G_losses['VGG'].mean().item(), step + 1)
+            # board.add_scalar('Loss/gen/adv', G_losses['GAN'].mean().item(), step + 1)
+            # board.add_scalar('Loss/gen/l1', G_losses['L1'].mean().item(), step + 1)
+            # board.add_scalar('Loss/gen/feat', G_losses['GAN_Feat'].mean().item(), step + 1)
+            # board.add_scalar('Loss/gen/vgg', G_losses['VGG'].mean().item(), step + 1)
             board.add_scalar('Loss/dis', loss_dis.item(), step + 1)
-            board.add_scalar('Loss/dis/adv_fake', D_losses['D_Fake'].mean().item(), step + 1)
-            board.add_scalar('Loss/dis/adv_real', D_losses['D_Real'].mean().item(), step + 1)
-            board.add_scalar('Loss/dis/l1', D_losses['L1'].mean().item(), step + 1)
+            # board.add_scalar('Loss/dis/adv_fake', D_losses['D_Fake'].mean().item(), step + 1)
+            # board.add_scalar('Loss/dis/adv_real', D_losses['D_Real'].mean().item(), step + 1)
+            # board.add_scalar('Loss/dis/l1', D_losses['L1'].mean().item(), step + 1)
             if opt.add_body_loss:
                 board.add_scalar('Loss/gen/adv_body', G_losses['GAN_Body_Parts'].mean().item(), step + 1)
                 board.add_scalar('Loss/dis/adv_fake_body', D_losses['D_Fake_body_parts_losses'].mean().item(), step + 1)
@@ -749,7 +743,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                             flow_list, fake_segmap, _, warped_clothmask_paired = tocg(opt, input1, input2)
                             
                             # warped cloth mask one hot 
-                            warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                            warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
                             
                             if opt.clothmask_composition != 'no_composition':
                                 if opt.clothmask_composition == 'detach':
@@ -862,6 +856,8 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         if (step + 1) % opt.save_count == 0:
             save_checkpoint(generator.module, os.path.join(opt.checkpoint_dir, opt.name, 'gen_step_%06d.pth' % (step + 1)),opt)
             save_checkpoint(discriminator.module, os.path.join(opt.checkpoint_dir, opt.name, 'dis_step_%06d.pth' % (step + 1)),opt)
+            for i in range(5):
+                save_checkpoint(discriminator_body_parts[i].module, os.path.join(opt.checkpoint_dir, opt.name, f'dis_step_{i}_{step + 1}.pth'),opt)
 
         if (step + 1) % 1000 == 0:
             scheduler_gen.step()
