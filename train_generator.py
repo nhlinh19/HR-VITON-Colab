@@ -42,7 +42,7 @@ def get_opt():
     parser.add_argument('--name', type=str, required=True)
     parser.add_argument('--gpu_ids', default="0")
     parser.add_argument('-j', '--workers', type=int, default=1)
-    parser.add_argument('-b', '--batch_size', type=int, default=8)
+    parser.add_argument('-b', '--batch_size', type=int, default=1)
     parser.add_argument('--fp16', action='store_true', help='use amp')
     # Cuda availability
     parser.add_argument('--cuda',default=True, help='cuda or cpu')
@@ -50,27 +50,27 @@ def get_opt():
     parser.add_argument("--dataroot", default="./data/")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
-    parser.add_argument("--fine_width", type=int, default=192)
-    parser.add_argument("--fine_height", type=int, default=256)
+    parser.add_argument("--fine_width", type=int, default=384)
+    parser.add_argument("--fine_height", type=int, default=512)
     parser.add_argument("--radius", type=int, default=20)
     parser.add_argument("--grid_size", type=int, default=5)
 
     parser.add_argument('--tensorboard_dir', type=str, default='tensorboard', help='save tensorboard infos')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')
     parser.add_argument('--tocg_checkpoint', type=str, default='./model/mtviton.pth', help='condition generator checkpoint')
-    parser.add_argument('--gen_checkpoint', type=str, default='', help='gen checkpoint')
-    parser.add_argument('--dis_checkpoint', type=str, default='', help='dis checkpoint')
+    parser.add_argument('--gen_checkpoint', type=str, default='./model/gen.pth', help='gen checkpoint')
+    parser.add_argument('--dis_checkpoint', type=str, default='./model/discriminator_mtviton.pth', help='dis checkpoint')
 
     parser.add_argument("--tensorboard_count", type=int, default=20)
     parser.add_argument("--display_count", type=int, default=100)
-    parser.add_argument("--save_count", type=int, default=100)
+    parser.add_argument("--save_count", type=int, default=500)
     parser.add_argument("--load_step", type=int, default=0)
     parser.add_argument("--keep_step", type=int, default=100000)
     parser.add_argument("--decay_step", type=int, default=100000)
     parser.add_argument("--shuffle", action='store_true', help='shuffle input data')
     
     # test
-    parser.add_argument("--lpips_count", type=int, default=100)
+    parser.add_argument("--lpips_count", type=int, default=1)
     parser.add_argument("--test_datasetting", default="paired")
     parser.add_argument("--test_dataroot", default="./data/")
     parser.add_argument("--test_data_list", default="test_pairs.txt")
@@ -87,15 +87,15 @@ def get_opt():
     parser.add_argument('--norm_D', type=str, default='spectralinstance', help='instance normalization or batch normalization')
     parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer') # 64
     parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer') # 64
-    parser.add_argument('--num_upsampling_layers', choices=['normal', 'more', 'most'], default='more', # most
+    parser.add_argument('--num_upsampling_layers', choices=['normal', 'more', 'most'], default='most', # most
                     help='If \'more\', add upsampling layer between the two middle resnet blocks. '
                             'If \'most\', also add one more (upsampling + resnet) layer at the end of the generator.')
     parser.add_argument('--init_type', type=str, default='xavier', help='network initialization [normal|xavier|kaiming|orthogonal]')
     parser.add_argument('--init_variance', type=float, default=0.02, help='variance of the initialization distribution')
 
-    parser.add_argument('--no_L1_loss', action='store_true',default=True, help='if specified, do *not* use L1 loss')
-    parser.add_argument('--no_ganFeat_loss', action='store_true',default=True, help='if specified, do *not* use discriminator feature matching loss')
-    parser.add_argument('--no_vgg_loss', action='store_true',default=True, help='if specified, do *not* use VGG feature matching loss')
+    parser.add_argument('--no_L1_loss', action='store_true',default=False, help='if specified, do *not* use L1 loss')
+    parser.add_argument('--no_ganFeat_loss', action='store_true',default=False, help='if specified, do *not* use discriminator feature matching loss')
+    parser.add_argument('--no_vgg_loss', action='store_true',default=False, help='if specified, do *not* use VGG feature matching loss')
     parser.add_argument('--lambda_l1', type=float, default=1.0, help='weight for feature matching loss')
     parser.add_argument('--lambda_feat', type=float, default=10.0, help='weight for feature matching loss')
     parser.add_argument('--lambda_vgg', type=float, default=10.0, help='weight for vgg loss')
@@ -118,8 +118,8 @@ def get_opt():
 
     # bounding box
     parser.add_argument("--bbox_max_size", default=[[0.3520238681102362, 0.3265102116141732], [0.4945308655265748, 0.5477464730971129], [0.29374154158464566, 0.46564089156824146], [0.33411509596456695, 0.15164528994422571], [0.35114246278297245, 0.14647924868766404]])
-    parser.add_argument("--add_body_loss", default=True) 
-    parser.add_argument("--num_evaluate", default=50)
+    parser.add_argument("--add_body_loss", default=False) 
+    parser.add_argument("--num_evaluate", default=2000)
 
     opt = parser.parse_args()
 
@@ -205,8 +205,8 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             tocg = DataParallelWithCallback(tocg, device_ids=opt.gpu_ids)
         generator = DataParallelWithCallback(generator, device_ids=opt.gpu_ids)
         discriminator = DataParallelWithCallback(discriminator, device_ids=opt.gpu_ids)
-        for i in range(5):
-            discriminator_body_parts[i] = DataParallelWithCallback(discriminator_body_parts[i], device_ids=opt.gpu_ids)
+        # for i in range(5):
+        #     discriminator_body_parts[i] = DataParallelWithCallback(discriminator_body_parts[i], device_ids=opt.gpu_ids)
         criterionGAN = DataParallelWithCallback(criterionGAN, device_ids=opt.gpu_ids)
         criterionL1 = DataParallelWithCallback(criterionL1, device_ids=opt.gpu_ids)
         criterionFeat = DataParallelWithCallback(criterionFeat, device_ids=opt.gpu_ids)
@@ -408,13 +408,13 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                 body_parts_pred_real.append(pred_real_body)
 
         G_losses = {}
-        # G_losses['GAN'] = criterionGAN(pred_fake, True, for_discriminator=False)
+        G_losses['GAN'] = criterionGAN(pred_fake, True, for_discriminator=False)
 
         if opt.add_body_loss:
             G_body_parts_losses = {}
             for i in range(5):
                 G_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_fake[i], True, for_discriminator=False)
-            G_losses['GAN_Body_Parts'] = sum(G_body_parts_losses.values()).mean()
+            G_losses['GAN_Body_Parts'] = sum(G_body_parts_losses.values()).mean() / 5
 
 
         if not opt.no_ganFeat_loss:
@@ -427,13 +427,28 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                     unweighted_loss = criterionFeat(pred_fake[i][j], pred_real[i][j].detach())
                     GAN_Feat_loss += unweighted_loss * opt.lambda_feat / num_D
             G_losses['GAN_Feat'] = GAN_Feat_loss
+            # G_losses['GAN_Body_Feat'] = torch.cuda.FloatTensor(len(opt.gpu_ids)).zero_() 
+            # for k in range(5):
+            #     num_D = len(body_parts_pred_fake[k])
+            #     GAN_Body_Feat_loss = torch.cuda.FloatTensor(len(opt.gpu_ids)).zero_()
+            #     for i in range(num_D):  # for each discriminator
+            #         # last output is the final prediction, so we exclude it
+            #         num_intermediate_outputs = len(body_parts_pred_fake[k][i]) - 1
+            #         for j in range(num_intermediate_outputs):  # for each layer output
+            #             unweighted_loss = criterionFeat(body_parts_pred_fake[k][i][j], body_parts_pred_real[k][i][j].detach())
+            #             GAN_Body_Feat_loss += unweighted_loss * opt.lambda_feat / num_D
+            #     G_losses['GAN_Body_Feat'] += GAN_Body_Feat_loss
+            # G_losses['GAN_Body_Feat'] /= 5
 
         if not opt.no_vgg_loss:
             G_losses['VGG'] = criterionVGG(output_paired, im) * opt.lambda_vgg
 
         if not opt.no_L1_loss:
-            print("AddL1")
-            G_losses['L1'] = criterionL1(output_paired, im) * opt.lambda_l1
+            G_losses['L1'] = criterionL1(output_paired,im) * opt.lambda_l1
+            # loss_L1_body = 0
+            # for i in range(5):
+            #     loss_L1_body += criterionL1(body_parts_fake[i], body_parts_real[i])
+            # G_losses['L1'] += loss_L1_body / 5 * opt.lambda_l1
             # for i in range(5):
             #     G_losses['L1'] = criterionL1(body_parts_fake[i], body_parts_real[i]) * opt.lambda_l1
             # G_L1_body_losses = {} 
@@ -444,7 +459,19 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             #             G_L1_body_losses[f'{k}'] += criterionL1(body_parts_pred_fake[k][i][j], body_parts_pred_real[k][i][j]) 
             #     G_L1_body_losses[f'{k}'] *= opt.lambda_l1
             # G_losses['L1'] += sum(G_L1_body_losses.values()).mean()
-
+            # G_losses['L1'] = torch.cuda.FloatTensor(len(opt.gpu_ids)).zero_()
+            # for k in range(5):
+            #     num_D = len(body_parts_pred_fake[k])
+            #     L1_loss = torch.cuda.FloatTensor(len(opt.gpu_ids)).zero_()
+            #     for i in range(num_D):  # for each discriminator
+            #         # last output is the final prediction, so we exclude it
+            #         num_intermediate_outputs = len(body_parts_pred_fake[k][i])
+            #         for j in range(num_intermediate_outputs):  # for each layer output
+            #             unweighted_loss = criterionFeat(body_parts_pred_fake[k][i][j], body_parts_pred_real[k][i][j].detach())
+            #             L1_loss += unweighted_loss * opt.lambda_feat / num_D
+            #     G_losses['L1'] += L1_loss
+            # G_losses['L1'] /= 5
+        
         loss_gen = sum(G_losses.values()).mean()
         print(G_losses)
         print("Loss gen:", loss_gen)
@@ -526,14 +553,14 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
         # for i in range(len(body_parts_pred_fake[0])):
         #     for j in range(len(body_parts_pred_fake[0][i])):
         #         print(f"--pred_fake[{i}][{j}] shape: {body_parts_pred_fake[0][i][j].shape}")
-        
+        # break
         # for i in range(len(pred_real)):
         #     for j in range(len(pred_real[i])):
         #         print(f"--pred_real[{i}][{j}] shape: {pred_real[i][j].shape}")
 
         D_losses = {}
-        # D_losses['D_Fake'] = criterionGAN(pred_fake, False, for_discriminator=True)
-        # D_losses['D_Real'] = criterionGAN(pred_real, True, for_discriminator=True)
+        D_losses['D_Fake'] = criterionGAN(pred_fake, False, for_discriminator=True)
+        D_losses['D_Real'] = criterionGAN(pred_real, True, for_discriminator=True)
 
         if opt.add_body_loss:
             D_Fake_body_parts_losses = {}
@@ -541,8 +568,8 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             for i in range(5):
                 D_Fake_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_fake[i], False, for_discriminator=True)
                 D_Real_body_parts_losses[f'{i}'] = criterionGAN(body_parts_pred_real[i], True, for_discriminator=True)
-            D_losses['D_Fake_body_parts_losses'] = sum(D_Fake_body_parts_losses.values()).mean()
-            D_losses['D_Real_body_parts_losses'] = sum(D_Real_body_parts_losses.values()).mean()
+            D_losses['D_Fake_body_parts_losses'] = sum(D_Fake_body_parts_losses.values()).mean() / 5
+            D_losses['D_Real_body_parts_losses'] = sum(D_Real_body_parts_losses.values()).mean() / 5
             # loss_body = sum(D_losses.values()).mean()
 
         loss_dis = sum(D_losses.values()).mean()
@@ -571,15 +598,20 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                                     (warped_cloth_paired[i].cpu() / 2 + 0.5), (agnostic[i].cpu() / 2 + 0.5), (pose[i].cpu() / 2 + 0.5), visualize_segmap(fake_parse_gauss.cpu(), batch=i),
                                     (output[i].cpu() / 2 + 0.5), (im[i].cpu() / 2 + 0.5)],
                                     nrow=4)
+            # for part in range(5):
+            #     grid_body = make_image_grid([(body_parts_fake[part][i] / 2 + 0.5), (body_parts_real[part][i] / 2 + 0.5)], nrow=2)
+            #     board.add_images(f'train_body_images_{part}', grid_body.unsqueeze(0), step + 1)
+
             board.add_images('train_images', grid.unsqueeze(0), step + 1)
             board.add_scalar('Loss/gen', loss_gen.item(), step + 1)
-            # board.add_scalar('Loss/gen/adv', G_losses['GAN'].mean().item(), step + 1)
-            # board.add_scalar('Loss/gen/l1', G_losses['L1'].mean().item(), step + 1)
-            # board.add_scalar('Loss/gen/feat', G_losses['GAN_Feat'].mean().item(), step + 1)
-            # board.add_scalar('Loss/gen/vgg', G_losses['VGG'].mean().item(), step + 1)
+            board.add_scalar('Loss/gen/adv', G_losses['GAN'].mean().item(), step + 1)
+            board.add_scalar('Loss/gen/l1', G_losses['L1'].mean().item(), step + 1)
+            board.add_scalar('Loss/gen/feat', G_losses['GAN_Feat'].mean().item(), step + 1)
+            # board.add_scalar('Loss/gen/feat', G_losses['GAN_Body_Feat'].mean().item(), step + 1)
+            board.add_scalar('Loss/gen/vgg', G_losses['VGG'].mean().item(), step + 1)
             board.add_scalar('Loss/dis', loss_dis.item(), step + 1)
-            # board.add_scalar('Loss/dis/adv_fake', D_losses['D_Fake'].mean().item(), step + 1)
-            # board.add_scalar('Loss/dis/adv_real', D_losses['D_Real'].mean().item(), step + 1)
+            board.add_scalar('Loss/dis/adv_fake', D_losses['D_Fake'].mean().item(), step + 1)
+            board.add_scalar('Loss/dis/adv_real', D_losses['D_Real'].mean().item(), step + 1)
             # board.add_scalar('Loss/dis/l1', D_losses['L1'].mean().item(), step + 1)
             if opt.add_body_loss:
                 board.add_scalar('Loss/gen/adv_body', G_losses['GAN_Body_Parts'].mean().item(), step + 1)
@@ -846,18 +878,23 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             board.add_scalar('test/IS_std', IS_std, step + 1)
                 
             generator.train()
+            break
 
         if (step + 1) % opt.display_count == 0:
             t = time.time() - iter_start_time
-            print("step: %8d, time: %.3f, G_loss: %.4f, G_adv_loss: %.4f, D_loss: %.4f, D_fake_loss: %.4f, D_real_loss: %.4f"
-                  % (step + 1, t, loss_gen.item(), G_losses['GAN'].mean().item(), loss_dis.item(),
-                     D_losses['D_Fake'].mean().item(), D_losses['D_Real'].mean().item()), flush=True)
+            # print("step: %8d, time: %.3f, G_loss: %.4f, G_adv_loss: %.4f, D_loss: %.4f, D_fake_loss: %.4f, D_real_loss: %.4f"
+            #       % (step + 1, t, loss_gen.item(), G_losses['GAN'].mean().item(), loss_dis.item(),
+            #          D_losses['D_Fake'].mean().item(), D_losses['D_Real'].mean().item()), flush=True)
+            print("step: %8d, time: %.3f, G_loss: %.4f, D_loss: %.4f"
+                  % (step + 1, t, loss_gen.item(), loss_dis.item()), flush=True)
+
 
         if (step + 1) % opt.save_count == 0:
             save_checkpoint(generator.module, os.path.join(opt.checkpoint_dir, opt.name, 'gen_step_%06d.pth' % (step + 1)),opt)
             save_checkpoint(discriminator.module, os.path.join(opt.checkpoint_dir, opt.name, 'dis_step_%06d.pth' % (step + 1)),opt)
-            for i in range(5):
-                save_checkpoint(discriminator_body_parts[i].module, os.path.join(opt.checkpoint_dir, opt.name, f'dis_step_{i}_{step + 1}.pth'),opt)
+            if opt.add_body_loss:
+                for i in range(5):
+                    save_checkpoint(discriminator_body_parts[i].module, os.path.join(opt.checkpoint_dir, opt.name, f'dis_step_{i}_{step + 1}.pth'),opt)
 
         if (step + 1) % 1000 == 0:
             scheduler_gen.step()

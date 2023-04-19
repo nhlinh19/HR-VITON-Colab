@@ -17,9 +17,9 @@ import eval_models as models
 def get_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--evaluation', default='LPIPS')
-    parser.add_argument('--predict_dir', default='./output/test_gen_body_paired')
+    parser.add_argument('--predict_dir', default='./output/originalCheckpoint1024')
     parser.add_argument('--ground_truth_dir', default='./data/test/image')
-    parser.add_argument('--resolution', type=int, default=256)
+    parser.add_argument('--resolution', type=int, default=1024)
     
 
     opt = parser.parse_args()
@@ -44,7 +44,7 @@ def Evaluation(opt, pred_list, gt_list):
     inception_model.eval()
 
     avg_ssim, avg_mse, avg_distance = 0.0, 0.0, 0.0
-    preds = np.zeros((10, 1000))
+    preds = np.zeros((len(gt_list), 1000))
     lpips_list = []
     num_img = 0
     with torch.no_grad():
