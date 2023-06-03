@@ -26,7 +26,7 @@ def get_opt():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--gpu_ids", default="0")
-    parser.add_argument('-j', '--workers', type=int, default=4)
+    parser.add_argument('-j', '--workers', type=int, default=0)
     parser.add_argument('-b', '--batch-size', type=int, default=1)
     parser.add_argument('--fp16', action='store_true', help='use amp')
     # Cuda availability
@@ -36,10 +36,10 @@ def get_opt():
     parser.add_argument("--dataroot", default="./data")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
-    parser.add_argument("--output_dir", type=str, default="./output/test_gen_original_paired")
+    parser.add_argument("--output_dir", type=str, default="./output/with_cuda")
     parser.add_argument("--datasetting", default="paired")
-    parser.add_argument("--fine_width", type=int, default=192)
-    parser.add_argument("--fine_height", type=int, default=256)
+    parser.add_argument("--fine_width", type=int, default=768)
+    parser.add_argument("--fine_height", type=int, default=1024)
 
     parser.add_argument('--tensorboard_dir', type=str, default='./data/tensorboard', help='save tensorboard infos')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')
@@ -129,7 +129,7 @@ def test(opt, test_loader, tocg, generator):
                 densepose = inputs['densepose'].cuda()
                 im = inputs['image']
                 input_label, input_parse_agnostic = label.cuda(), parse_agnostic.cuda()
-                pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float32)).cuda()
 
                 # print(f"pose_map shape: {pose_map.shape}")
                 # print(f"pre_clothes_mask shape: {pre_clothes_mask.shape}")
@@ -152,7 +152,7 @@ def test(opt, test_loader, tocg, generator):
                 densepose = inputs['densepose']
                 im = inputs['image']
                 input_label, input_parse_agnostic = label, parse_agnostic
-                pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float))
+                pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float32))
 
 
 
@@ -179,9 +179,9 @@ def test(opt, test_loader, tocg, generator):
             
             # warped cloth mask one hot
             if opt.cuda :
-                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float32)).cuda()
             else :
-                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float))
+                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float32))
             # print("warped_cm_onehot shape: ", warped_cm_onehot.shape)
 
             if opt.clothmask_composition != 'no_composition':

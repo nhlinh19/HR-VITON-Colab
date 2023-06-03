@@ -49,8 +49,8 @@ if __name__=="__main__":
     parser.add_argument('--output_path', type=str, help="output dir")
 
     args = parser.parse_args()
-    data_path = args.data_path
-    output_path = args.output_path
+    data_path = "C:/Users/maidu/source/repos/KHTN/Thesis/HR-VTON/HR-VITON/data/single"
+    output_path = "C:/Users/maidu/source/repos/KHTN/Thesis/HR-VTON/HR-VITON/data/single/image-parse-agnostic-v3.2"
     
     os.makedirs(output_path, exist_ok=True)
     

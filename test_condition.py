@@ -57,7 +57,7 @@ def get_opt():
     parser.add_argument('--num_D', type=int, default=2, help='Generator ngf')
     parser.add_argument('--spectral', action='store_true', help="Apply spectral normalization to D")
     parser.add_argument('--norm_const', type=float, default=0, help='Normalizing constant for rejection sampling')
-    parser.add_argument("--cuda", action='store_true', default=True, help='cuda or cpu')
+    parser.add_argument("--cuda", action='store_true', default=False, help='cuda or cpu')
     
     opt = parser.parse_args()
     return opt

@@ -28,6 +28,7 @@ from PIL import Image
 from torchvision.models.inception import inception_v3
 from scipy.stats import entropy
 from skimage.metrics import structural_similarity as ssim
+from torchvision.utils import save_image
 
 def remove_overlap(seg_out, warped_cm):
     
@@ -61,7 +62,7 @@ def get_opt():
     parser.add_argument('--gen_checkpoint', type=str, default='', help='gen checkpoint')
     parser.add_argument('--dis_checkpoint', type=str, default='', help='dis checkpoint')
 
-    parser.add_argument("--tensorboard_count", type=int, default=10)
+    parser.add_argument("--tensorboard_count", type=int, default=1)
     parser.add_argument("--display_count", type=int, default=100)
     parser.add_argument("--save_count", type=int, default=100)
     parser.add_argument("--load_step", type=int, default=0)
@@ -368,6 +369,8 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             # body_parts_pred_fake = [] # [5][2, 4] tensor of feature layer [2*batch, output_channel, height_feature, width_feature]
             # body_parts_pred_real = []
             for i in range(5):
+                # save_image(body_parts_fake[i] / 2 + 0.5, f'./output/torch/cropped_fake_{i}.png')
+                # save_image(body_parts_real[i] / 2 + 0.5, f'./output/torch/cropped_real_{i}.png')
                 # body_parts_pred_fake.append(
                 #     discriminator_body_parts[i](body_parts_fake[i])
                 # )
@@ -431,14 +434,18 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
 
         if not opt.no_L1_loss:
             G_losses['L1'] = criterionL1(output_paired, im) * opt.lambda_l1
-            G_L1_body_losses = {} 
-            for k in range(5):
-                G_L1_body_losses[f'{k}'] = 0
-                for i in range(len(body_parts_pred_fake[0])):
-                    for j in range(len(body_parts_pred_fake[0][i])):
-                        G_L1_body_losses[f'{k}'] += criterionL1(body_parts_pred_fake[k][i][j], body_parts_pred_real[k][i][j]) 
-                G_L1_body_losses[f'{k}'] *= opt.lambda_l1
-            G_losses['L1'] += sum(G_L1_body_losses.values()).mean()
+            loss_L1_body = 0
+            for i in range(5):
+                loss_L1_body += criterionL1(body_parts_fake[i], body_parts_real[i])
+            G_losses['L1'] += loss_L1_body / 5 * opt.lambda_l1
+            # G_L1_body_losses = {} 
+            # for k in range(5):
+            #     G_L1_body_losses[f'{k}'] = 0
+            #     for i in range(len(body_parts_pred_fake[0])):
+            #         for j in range(len(body_parts_pred_fake[0][i])):
+            #             G_L1_body_losses[f'{k}'] += criterionL1(body_parts_pred_fake[k][i][j], body_parts_pred_real[k][i][j]) 
+            #     G_L1_body_losses[f'{k}'] *= opt.lambda_l1
+            # G_losses['L1'] += sum(G_L1_body_losses.values()).mean()
 
         loss_gen = sum(G_losses.values()).mean()
         print(G_losses)
@@ -577,6 +584,10 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                                     (warped_cloth_paired[i].cpu() / 2 + 0.5), (agnostic[i].cpu() / 2 + 0.5), (pose[i].cpu() / 2 + 0.5), visualize_segmap(fake_parse_gauss.cpu(), batch=i),
                                     (output[i].cpu() / 2 + 0.5), (im[i].cpu() / 2 + 0.5)],
                                     nrow=4)
+            
+            for part in range(5):
+                grid_body = make_image_grid([(body_parts_fake[part][i] / 2 + 0.5), (body_parts_real[part][i] / 2 + 0.5)], nrow=2)
+                board.add_images(f'train_body_images_{part}', grid_body.unsqueeze(0), step + 1)
             board.add_images('train_images', grid.unsqueeze(0), step + 1)
             board.add_scalar('Loss/gen', loss_gen.item(), step + 1)
             board.add_scalar('Loss/gen/adv', G_losses['GAN'].mean().item(), step + 1)

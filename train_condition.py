@@ -77,7 +77,7 @@ def get_opt():
     parser.add_argument('--Ddropout', action='store_true', help="Apply dropout to D")
     parser.add_argument('--num_D', type=int, default=2, help='Generator ngf')
     # Cuda availability
-    parser.add_argument('--cuda',default=True, help='cuda or cpu')
+    parser.add_argument('--cuda',default=False, help='cuda or cpu')
     # training
     parser.add_argument("--G_D_seperate", action='store_true')
     parser.add_argument("--no_GAN_loss", action='store_true')

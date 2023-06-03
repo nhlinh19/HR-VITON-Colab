@@ -17,9 +17,9 @@ import eval_models as models
 def get_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--evaluation', default='LPIPS')
-    parser.add_argument('--predict_dir', default='./output/test_gen_body_paired')
+    parser.add_argument('--predict_dir', default='./output/test_gen_original_paired')
     parser.add_argument('--ground_truth_dir', default='./data/test/image')
-    parser.add_argument('--resolution', type=int, default=256)
+    parser.add_argument('--resolution', type=int, default=1024)
     
 
     opt = parser.parse_args()
