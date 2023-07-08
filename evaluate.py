@@ -13,6 +13,8 @@ from torchvision.models.inception import inception_v3
 
 import eval_models as models
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 #Test colab - 2
 def get_opt():
     parser = argparse.ArgumentParser()
@@ -71,13 +73,13 @@ def Evaluation(opt, pred_list, gt_list):
             pred_np = np.asarray(pred_img.convert('L'))
             # gt_img.save(f'./output/torch/eval_gt.png')
             # pred_img.save(f'./output/torch/eval_pred.png')
-            print(f"Ssim{img_pred}: ", ssim(gt_np, pred_np, data_range=255, gaussian_weights=True, use_sample_covariance=False))
+            # print(f"Ssim{img_pred}: ", ssim(gt_np, pred_np, data_range=255, gaussian_weights=True, use_sample_covariance=False))
             avg_ssim += ssim(gt_np, pred_np, data_range=255, gaussian_weights=True, use_sample_covariance=False)
 
             # Calculate LPIPS
             gt_img_LPIPS = T2(gt_img).unsqueeze(0).cuda()
             pred_img_LPIPS = T2(pred_img).unsqueeze(0).cuda()
-            print(f"Shape gt_img_LPIPS: {gt_img_LPIPS.shape}")
+            # print(f"Shape gt_img_LPIPS: {gt_img_LPIPS.shape}")
             lpips_list.append((img_pred, model.forward(gt_img_LPIPS, pred_img_LPIPS).item()))
             avg_distance += lpips_list[-1][1]
             # Calculate Inception model prediction
@@ -107,9 +109,9 @@ def Evaluation(opt, pred_list, gt_list):
         print("Calculate Inception Score...")
         for k in range(splits):
             part = preds[k * (num_img // splits): (k+1) * (num_img // splits), :]
-            print(part.shape)
+            # print(part.shape)
             py = np.mean(part, axis=0)
-            print(py.shape)
+            # print(py.shape)
             scores = []
             for i in range(part.shape[0]):
                 pyx = part[i, :]
@@ -129,8 +131,10 @@ def Evaluation(opt, pred_list, gt_list):
 def main():
     opt = get_opt()
 
+    print(opt)
     # Output과 Ground Truth Data
     pred_list = os.listdir(opt.predict_dir)
+    print(opt.predict_dir)
     gt_list = os.listdir(opt.ground_truth_dir)
     pred_list.sort()
     gt_list.sort()

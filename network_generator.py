@@ -399,10 +399,19 @@ class GANLoss(nn.Module):
             return loss
         else:
             # wgan
-            if target_is_real:
-                return -input.mean()
+            # if target_is_real:
+            #     return -input.mean()
+            # else:
+            #     return input.mean()
+            if for_discriminator:
+                if target_is_real:
+                    loss = -torch.mean(input)
+                else:
+                    loss = torch.mean(input)
             else:
-                return input.mean()
+                assert target_is_real, "The generator's wgan loss must be aiming for real"
+                loss = -torch.mean(input)
+            return loss
 
     def __call__(self, input, target_is_real, for_discriminator=True):
         # computing loss is a bit complicated because |input| may not be

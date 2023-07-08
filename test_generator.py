@@ -25,8 +25,8 @@ def remove_overlap(seg_out, warped_cm):
 def get_opt():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--gpu_ids", default="0")
-    parser.add_argument('-j', '--workers', type=int, default=4)
+    parser.add_argument("--gpu_ids", default="1")
+    parser.add_argument('-j', '--workers', type=int, default=1)
     parser.add_argument('-b', '--batch-size', type=int, default=1)
     parser.add_argument('--fp16', action='store_true', help='use amp')
     # Cuda availability
@@ -36,10 +36,10 @@ def get_opt():
     parser.add_argument("--dataroot", default="./data")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
-    parser.add_argument("--output_dir", type=str, default="./output/originalCheckpoint1024")
+    parser.add_argument("--output_dir", type=str, default="./output/paperCheckpoint")
     parser.add_argument("--datasetting", default="paired")
-    parser.add_argument("--fine_width", type=int, default=768)
-    parser.add_argument("--fine_height", type=int, default=1024)
+    parser.add_argument("--fine_width", type=int, default=384)
+    parser.add_argument("--fine_height", type=int, default=512)
 
     parser.add_argument('--tensorboard_dir', type=str, default='./data/tensorboard', help='save tensorboard infos')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')

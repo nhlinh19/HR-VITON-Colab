@@ -47,8 +47,8 @@ def get_opt():
 
     parser.add_argument("--name", default="test")
     parser.add_argument("--gpu_ids", default="0")
-    parser.add_argument('-j', '--workers', type=int, default=4)
-    parser.add_argument('-b', '--batch-size', type=int, default=8)
+    parser.add_argument('-j', '--workers', type=int, default=1)
+    parser.add_argument('-b', '--batch-size', type=int, default=4)
     parser.add_argument('--fp16', action='store_true', help='use amp')
 
     parser.add_argument("--dataroot", default="./data/")
@@ -61,9 +61,9 @@ def get_opt():
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')
     parser.add_argument('--tocg_checkpoint', type=str, default='', help='tocg checkpoint')
 
-    parser.add_argument("--tensorboard_count", type=int, default=100)
+    parser.add_argument("--tensorboard_count", type=int, default=20)
     parser.add_argument("--display_count", type=int, default=50)
-    parser.add_argument("--save_count", type=int, default=10000)
+    parser.add_argument("--save_count", type=int, default=500)
     parser.add_argument("--load_step", type=int, default=0)
     parser.add_argument("--keep_step", type=int, default=300000)
     parser.add_argument("--shuffle", action='store_true', help='shuffle input data')
@@ -121,9 +121,9 @@ def train(opt, train_loader, test_loader, val_loader, board, tocg, D):
     criterionL1 = nn.L1Loss()
     criterionVGG = VGGLoss(opt)
     if opt.fp16:
-        criterionGAN = GANLoss(use_lsgan=True, tensor=torch.cuda.HalfTensor)
+        criterionGAN = GANLoss(use_lsgan=False, tensor=torch.cuda.HalfTensor)
     else :
-        criterionGAN = GANLoss(use_lsgan=True, tensor=torch.cuda.FloatTensor if opt.gpu_ids else torch.Tensor)
+        criterionGAN = GANLoss(use_lsgan=False, tensor=torch.cuda.FloatTensor if opt.gpu_ids else torch.Tensor)
 
     # optimizer
     optimizer_G = torch.optim.Adam(tocg.parameters(), lr=opt.G_lr, betas=(0.5, 0.999))
@@ -137,7 +137,7 @@ def train(opt, train_loader, test_loader, val_loader, board, tocg, D):
         # input1
         c_paired = inputs['cloth']['paired'].cuda()
         cm_paired = inputs['cloth_mask']['paired'].cuda()
-        cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+        cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
         # input2
         parse_agnostic = inputs['parse_agnostic'].cuda()
         densepose = inputs['densepose'].cuda()
@@ -175,7 +175,7 @@ def train(opt, train_loader, test_loader, val_loader, board, tocg, D):
 
         # warped cloth mask one hot 
         # Condition generator
-        warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+        warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
         print("warped_cm_onehot shape: ", warped_cm_onehot.shape)
 
         # fake segmap cloth channel * warped clothmask
@@ -341,7 +341,7 @@ def train(opt, train_loader, test_loader, val_loader, board, tocg, D):
                     # input1
                     c_paired = inputs['cloth']['paired'].cuda()
                     cm_paired = inputs['cloth_mask']['paired'].cuda()
-                    cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                    cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
                     # input2
                     parse_agnostic = inputs['parse_agnostic'].cuda()
                     densepose = inputs['densepose'].cuda()
@@ -405,7 +405,7 @@ def train(opt, train_loader, test_loader, val_loader, board, tocg, D):
                 # input1
                 c_paired = inputs['cloth'][opt.test_datasetting].cuda()
                 cm_paired = inputs['cloth_mask'][opt.test_datasetting].cuda()
-                cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
                 # input2
                 parse_agnostic = inputs['parse_agnostic'].cuda()
                 densepose = inputs['densepose'].cuda()
@@ -427,7 +427,7 @@ def train(opt, train_loader, test_loader, val_loader, board, tocg, D):
                     # forward
                     flow_list, fake_segmap, warped_cloth_paired, warped_clothmask_paired = tocg(opt, input1, input2)
                     
-                    warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                    warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
                     if opt.clothmask_composition != 'no_composition':
                         if opt.clothmask_composition == 'detach':
                             cloth_mask = torch.ones_like(fake_segmap)

@@ -40,9 +40,9 @@ def get_opt():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--name', type=str, required=True)
-    parser.add_argument('--gpu_ids', default="0")
-    parser.add_argument('-j', '--workers', type=int, default=1)
-    parser.add_argument('-b', '--batch_size', type=int, default=1)
+    parser.add_argument('--gpu_ids', default="2")
+    parser.add_argument('-j', '--workers', type=int, default=0)
+    parser.add_argument('-b', '--batch_size', type=int, default=8)
     parser.add_argument('--fp16', action='store_true', help='use amp')
     # Cuda availability
     parser.add_argument('--cuda',default=True, help='cuda or cpu')
@@ -58,8 +58,8 @@ def get_opt():
     parser.add_argument('--tensorboard_dir', type=str, default='tensorboard', help='save tensorboard infos')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')
     parser.add_argument('--tocg_checkpoint', type=str, default='./model/mtviton.pth', help='condition generator checkpoint')
-    parser.add_argument('--gen_checkpoint', type=str, default='./model/gen.pth', help='gen checkpoint')
-    parser.add_argument('--dis_checkpoint', type=str, default='./model/discriminator_mtviton.pth', help='dis checkpoint')
+    parser.add_argument('--gen_checkpoint', type=str, default='', help='gen checkpoint')
+    parser.add_argument('--dis_checkpoint', type=str, default='', help='dis checkpoint')
 
     parser.add_argument("--tensorboard_count", type=int, default=20)
     parser.add_argument("--display_count", type=int, default=100)
@@ -70,7 +70,7 @@ def get_opt():
     parser.add_argument("--shuffle", action='store_true', help='shuffle input data')
     
     # test
-    parser.add_argument("--lpips_count", type=int, default=1)
+    parser.add_argument("--lpips_count", type=int, default=100)
     parser.add_argument("--test_datasetting", default="paired")
     parser.add_argument("--test_dataroot", default="./data/")
     parser.add_argument("--test_data_list", default="test_pairs.txt")
@@ -93,18 +93,18 @@ def get_opt():
     parser.add_argument('--init_type', type=str, default='xavier', help='network initialization [normal|xavier|kaiming|orthogonal]')
     parser.add_argument('--init_variance', type=float, default=0.02, help='variance of the initialization distribution')
 
-    parser.add_argument('--no_L1_loss', action='store_true',default=False, help='if specified, do *not* use L1 loss')
+    parser.add_argument('--no_L1_loss', action='store_true',default=True, help='if specified, do *not* use L1 loss')
     parser.add_argument('--no_ganFeat_loss', action='store_true',default=False, help='if specified, do *not* use discriminator feature matching loss')
     parser.add_argument('--no_vgg_loss', action='store_true',default=False, help='if specified, do *not* use VGG feature matching loss')
-    parser.add_argument('--lambda_l1', type=float, default=1.0, help='weight for feature matching loss')
-    parser.add_argument('--lambda_feat', type=float, default=10.0, help='weight for feature matching loss')
+    parser.add_argument('--lambda_l1', type=float, default=10.0, help='weight for feature matching loss')
+    parser.add_argument('--lambda_feat', type=float, default=30.0, help='weight for feature matching loss')
     parser.add_argument('--lambda_vgg', type=float, default=10.0, help='weight for vgg loss')
     
     # D
     parser.add_argument('--n_layers_D', type=int, default=3, help='# layers in each discriminator')
     parser.add_argument('--netD_subarch', type=str, default='n_layer', help='architecture of each discriminator')
     parser.add_argument('--num_D', type=int, default=2, help='number of discriminators to be used in multiscale')
-    
+
     # Training
     parser.add_argument('--GT', action='store_true')
     parser.add_argument('--occlusion', action='store_true')
@@ -119,7 +119,7 @@ def get_opt():
     # bounding box
     parser.add_argument("--bbox_max_size", default=[[0.3520238681102362, 0.3265102116141732], [0.4945308655265748, 0.5477464730971129], [0.29374154158464566, 0.46564089156824146], [0.33411509596456695, 0.15164528994422571], [0.35114246278297245, 0.14647924868766404]])
     parser.add_argument("--add_body_loss", default=False) 
-    parser.add_argument("--num_evaluate", default=2000)
+    parser.add_argument("--num_evaluate", default=100)
 
     opt = parser.parse_args()
 
@@ -167,9 +167,9 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
     print("--Model")
     # criterion
     if opt.fp16:
-        criterionGAN = GANLoss('hinge', tensor=torch.cuda.HalfTensor)
+        criterionGAN = GANLoss('ls', tensor=torch.cuda.HalfTensor)
     else:
-        criterionGAN = GANLoss('hinge', tensor=torch.cuda.FloatTensor)
+        criterionGAN = GANLoss('ls', tensor=torch.cuda.FloatTensor)
     criterionL1 = nn.L1Loss()
     criterionFeat = nn.L1Loss()
     print("--Finish L1 loss")
@@ -605,8 +605,10 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             board.add_images('train_images', grid.unsqueeze(0), step + 1)
             board.add_scalar('Loss/gen', loss_gen.item(), step + 1)
             board.add_scalar('Loss/gen/adv', G_losses['GAN'].mean().item(), step + 1)
-            board.add_scalar('Loss/gen/l1', G_losses['L1'].mean().item(), step + 1)
-            board.add_scalar('Loss/gen/feat', G_losses['GAN_Feat'].mean().item(), step + 1)
+            if not opt.no_L1_loss:
+                board.add_scalar('Loss/gen/l1', G_losses['L1'].mean().item(), step + 1)
+            if not opt.no_ganFeat_loss:
+                board.add_scalar('Loss/gen/feat', G_losses['GAN_Feat'].mean().item(), step + 1)
             # board.add_scalar('Loss/gen/feat', G_losses['GAN_Body_Feat'].mean().item(), step + 1)
             board.add_scalar('Loss/gen/vgg', G_losses['VGG'].mean().item(), step + 1)
             board.add_scalar('Loss/dis', loss_dis.item(), step + 1)
@@ -876,9 +878,7 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             board.add_scalar('test/LPIPS', avg_distance, step + 1)
             board.add_scalar('test/IS_mean', IS_mean, step + 1)
             board.add_scalar('test/IS_std', IS_std, step + 1)
-                
             generator.train()
-            break
 
         if (step + 1) % opt.display_count == 0:
             t = time.time() - iter_start_time
@@ -900,6 +900,8 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
             scheduler_gen.step()
             scheduler_dis.step()
 
+        if (step == 30000):
+            break
 
 def main():
     opt = get_opt()
